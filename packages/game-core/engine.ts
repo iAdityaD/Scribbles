@@ -7,11 +7,12 @@ type Member = Player & {token:string;disconnectedAt:number;lastMessage:number};
 export class Room {
  code:string; hostId=''; members:Member[]=[]; settings:Settings; phase:Phase='lobby';
  round=0; order:string[]=[]; turnIndex=-1; turnId=''; drawerId=''; deadline=0;
- secret=''; choices:string[]=[]; strokes:Stroke[]=[]; undone:Stroke[]=[]; revision=0;
+ secret=''; choices:string[]=[]; hintPositions:number[]=[]; strokes:Stroke[]=[]; undone:Stroke[]=[]; revision=0;
  messages:Message[]=[]; updatedAt:number; used = new Set<string>();
  pausedPhase:Phase='drawing'; remaining=0;
  constructor(code:string,settings:Settings,now:number){this.code=code;this.settings=settings;this.updatedAt=now;}
  add(name:string,avatar:number,now:number):Session {
+  if(!['lobby','finished'].includes(this.phase)&&!this.settings.allowLateJoin)throw new GameError('This room is locked until the game ends.');
   if(this.members.length>=this.settings.maxPlayers) throw new GameError('This room is full.');
   const m:Member={id:randomUUID(),token:randomBytes(32).toString('hex'),name,avatar,score:0,connected:true,ready:false,guessed:false,spectator:!['lobby','finished'].includes(this.phase),disconnectedAt:0,lastMessage:-Infinity};
   this.members.push(m); if(!this.hostId)this.hostId=m.id;
@@ -50,15 +51,18 @@ export class Room {
   }
   this.turnId=randomUUID();this.secret='';this.strokes=[];this.undone=[];this.revision=0;
   for(const m of this.members)m.guessed=false;
-  const pack=this.settings.pack==='Custom'?this.settings.customWords:words[this.settings.pack];
+  const pack=this.settings.mode==='custom'?this.settings.customWords:words[this.settings.pack];
   const unique=[...new Set(pack.map(w=>w.toLowerCase()))];let available=unique.filter(w=>!this.used.has(w));
-  if(available.length<3){this.used.clear();available=unique;}
-  this.choices=[];while(this.choices.length<3&&available.length)this.choices.push(available.splice(randomInt(available.length),1)[0]);
-  this.phase='choosing';this.deadline=now+15000;this.system(`${this.member(this.drawerId).name} is choosing a word.`,now);
+  if(available.length<this.settings.wordChoices){this.used.clear();available=unique;}
+  this.choices=[];while(this.choices.length<this.settings.wordChoices&&available.length)this.choices.push(available.splice(randomInt(available.length),1)[0]);
+  this.phase='choosing';this.deadline=now+this.settings.choiceSeconds*1000;this.system(`${this.member(this.drawerId).name} is choosing a word.`,now);
  }
  choose(id:string,index:number,turnId:string,now:number){
   if(this.phase!=='choosing'||id!==this.drawerId||turnId!==this.turnId)throw new GameError('Word selection has ended.');
-  this.secret=this.choices[index]??this.choices[0];this.used.add(this.secret);this.choices=[];this.phase='drawing';this.deadline=now+this.settings.seconds*1000;
+  if(!this.choices[index])throw new GameError('Choose one of the offered words.');
+  this.secret=this.choices[index];this.hintPositions=Array.from(this.secret).flatMap((c,i)=>/[a-z]/i.test(c)?[i]:[]);
+  for(let i=this.hintPositions.length-1;i>0;i--){const j=randomInt(i+1);[this.hintPositions[i],this.hintPositions[j]]=[this.hintPositions[j],this.hintPositions[i]];}
+  this.used.add(this.secret);this.choices=[];this.phase='drawing';this.deadline=now+this.settings.seconds*1000;
  }
  reveal(now:number){this.phase='reveal';this.deadline=now+5000;this.choices=[];}
  message(id:string,text:string,mode:'guess'|'chat',turnId:string|undefined,now:number){
@@ -122,10 +126,18 @@ export class Room {
   }
   if(now>=this.deadline){if(this.phase==='choosing')this.choose(this.drawerId,0,this.turnId,now);else this.reveal(now);}
  }
+ hint(now:number){
+  if(!this.secret)return '';
+  const remaining=this.phase==='paused'?this.remaining:Math.max(0,this.deadline-now);
+  const elapsed=this.settings.seconds*1000-remaining;
+  const count=this.phase==='drawing'||this.phase==='paused'?Math.min(this.settings.hints,Math.max(0,this.hintPositions.length-2),Math.floor(Math.max(0,elapsed)/(this.settings.seconds*1000)*(this.settings.hints+1))):0;
+  const reveal=new Set(this.hintPositions.slice(0,count));
+  return Array.from(this.secret).map((c,i)=>/[a-z]/i.test(c)&&!reveal.has(i)?'_':c).join('');
+ }
  snapshot(id:string,now:number):Snapshot{
   this.member(id);
   const showWord=(id===this.drawerId&&['drawing','paused'].includes(this.phase))||['reveal','finished'].includes(this.phase);
-  return {code:this.code,me:id,hostId:this.hostId,settings:{...this.settings,customWords:id===this.hostId?this.settings.customWords:[]},players:this.members.map(({token,disconnectedAt,lastMessage,...p})=>({...p})),phase:this.phase,round:Math.min(this.round,this.settings.rounds),turn:this.turnIndex+1,turnCount:this.order.length,turnId:this.turnId,drawerId:this.drawerId,deadline:this.deadline,serverNow:now,...(showWord&&this.secret?{word:this.secret}:{}),...(id===this.drawerId&&this.phase==='choosing'?{choices:[...this.choices]}:{}),...(this.secret?{hint:this.secret.replace(/[a-z]/gi,'_')}:{}),strokes:this.strokes.map(s=>({...s,points:s.points.map(p=>({...p}))})),canvasRevision:this.revision,messages:this.messages.map(m=>({...m}))};
+  return {code:this.code,me:id,hostId:this.hostId,settings:{...this.settings,customWords:id===this.hostId?this.settings.customWords:[]},players:this.members.map(({token,disconnectedAt,lastMessage,...p})=>({...p})),phase:this.phase,round:Math.min(this.round,this.settings.rounds),turn:this.turnIndex+1,turnCount:this.order.length,turnId:this.turnId,drawerId:this.drawerId,deadline:this.deadline,serverNow:now,...(showWord&&this.secret?{word:this.secret}:{}),...(id===this.drawerId&&this.phase==='choosing'?{choices:[...this.choices]}:{}),...(this.secret?{hint:this.hint(now)}:{}),strokes:this.strokes.map(s=>({...s,points:s.points.map(p=>({...p}))})),canvasRevision:this.revision,messages:this.messages.map(m=>({...m}))};
  }
 }
 export class GameStore {

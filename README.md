@@ -6,7 +6,9 @@ Private drawing-and-guessing game for Android and iOS. Create a room, invite fri
 
 - Shared React Native + Expo app with the supplied dark/yellow/cream visual direction, original vector cat artwork and app icon.
 - Guest nickname/avatar, create/join by six-character code, share invitation and `scribbles://join/CODE` deep links.
-- Lobby chat, ready states, host settings, custom word packs, 2–8 seats, 1–8 rounds and 30–180 second turns.
+- Lobby chat, ready states, host settings, reusable 20–100-word custom sets, 2–12 seats, 1–10 rounds and 30–180 second turns.
+- Room mode: **Random words** (Classic/Animals) or **Custom set** selected from a dropdown. Create, edit and delete named sets on your device. Each room receives its own copy.
+- More game options: 1–3 word choices, 0–3 timed letter hints, 10–30 seconds for word selection, and mid-game joining on/off.
 - Live normalized vector strokes, pencil, eraser, 8 colours, 3 brush sizes, undo/redo and confirmed clear.
 - Server-owned word selection, turn deadlines, guessing, scoring, word reveal, leaderboard and rematch.
 - One conversation feed with Guess/Chat mode, hidden correct answers, spoiler filtering, local chat mute and host removal.
@@ -43,6 +45,8 @@ npm run typecheck
 npm test
 npm run export:mobile
 ```
+
+For the two-player UI smoke test, run `npx playwright install chromium` once, then `npm run test:ui` after exporting. CI also runs it.
 
 `export:mobile` creates Android and iOS Hermes bundles plus a web bundle. Bundles are **not** installable native binaries. See [test coverage and device checklist](docs/TESTING.md).
 

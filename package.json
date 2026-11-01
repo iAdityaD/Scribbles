@@ -12,16 +12,21 @@
     "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "start:server": "node --import tsx apps/server/src/index.ts",
-    "export:mobile": "npm run export --workspace @scribbles/mobile"
+    "export:mobile": "npm run export --workspace @scribbles/mobile",
+    "test:ui": "node --import tsx tests/ui-smoke.cjs"
   },
   "devDependencies": {
-    "typescript": "~5.9.2",
-    "tsx": "^4.20.6",
     "@types/node": "^22.18.0",
-    "@types/react": "~19.1.10"
+    "@types/react": "~19.1.10",
+    "playwright": "^1.64.1",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.2"
   },
   "dependencies": {
-    "zod": "^4.1.0",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "zod": "^4.1.0"
+  },
+  "overrides": {
+    "expo-font": "~14.0.12"
   }
 }

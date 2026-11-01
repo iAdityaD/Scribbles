@@ -19,3 +19,9 @@ Run `npm run typecheck`, `npm test`, and `npm run export:mobile`. CI performs th
 - [ ] Use HTTPS backend, permanent signing keys and store privacy disclosures before publication.
 
 A successful JavaScript/Hermes export does not prove native rendering, signing or device networking. Report those checks separately.
+
+## Custom-set and UI coverage
+
+Additional tests cover the 19/20-word boundary, canonical duplicates, maximum word count, selected-set-only choices, configured choice count, hint timing and locked mid-game joins.
+
+After exporting, install Chromium with `npx playwright install chromium` and run `npm run test:ui`. The smoke test rejects a 19-word set, saves 20 words, reloads to verify persistence, selects the set from the dropdown, configures a custom room, then completes a two-player drawing/chat/guessing match and rematch. CI runs the same script and uploads screenshots.

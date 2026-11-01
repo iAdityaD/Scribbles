@@ -56,3 +56,34 @@ test('rooms are isolated and empty rooms expire',()=>{
  const store=new GameStore();const a=store.create(defaults,'A',0,0),b=store.create(defaults,'B',1,0);assert.notEqual(a.room.code,b.room.code);assert.throws(()=>a.room.member(b.session.playerId));
  a.room.remove(a.session.playerId,100);store.sweep(101);assert.equal(store.rooms.has(a.room.code),false);assert.equal(store.rooms.size,1);
 });
+
+test('custom sets require 20–100 canonical unique words in both room and set schemas',async()=>{
+ const {wordSetSchema,wordListSchema,parseWordText}=await import('../packages/protocol/index.ts');
+ const {words}=await import('../packages/game-core/words.ts');const twenty=words.Classic.slice(0,20);
+ assert.ok(wordSetSchema.safeParse({id:'set-1',name:'Game night',words:twenty}).success);
+ assert.equal(wordListSchema.safeParse(twenty.slice(0,19)).success,false);
+ assert.equal(wordListSchema.safeParse([...twenty,'Mountain']).success,false);
+ assert.equal(wordListSchema.safeParse([...twenty,'birthday cake','birthday-cake']).success,false);
+ assert.equal(wordListSchema.safeParse([...twenty,...Array(81).fill('extra')]).success,false);
+ assert.deepEqual(parseWordText(' mountain, rainbow\n birthday cake;castle '),['mountain','rainbow','birthday cake','castle']);
+ const c={type:'create',name:'Host',avatar:0,settings:{...defaults,mode:'custom',wordSetName:'Game night',customWords:twenty}};
+ assert.ok(commandSchema.safeParse(c).success);assert.equal(commandSchema.safeParse({...c,settings:{...c.settings,customWords:twenty.slice(0,19)}}).success,false);
+});
+test('custom mode offers only words from its selected set and respects word-choice count',async()=>{
+ const {words}=await import('../packages/game-core/words.ts');const chosen=words.Animals.slice(0,20);
+ const r=new Room('ABC234',{...defaults,mode:'custom',wordSetName:'Animal night',customWords:chosen,wordChoices:2,choiceSeconds:20},0);
+ const a=r.add('Alice',0,0),b=r.add('Bob',1,0);r.act(b.playerId,{type:'ready',ready:true},0);r.start(a.playerId,100);
+ assert.equal(r.choices.length,2);assert.ok(r.choices.every(w=>chosen.includes(w)));assert.equal(r.deadline,20100);
+ assert.equal(r.snapshot(b.playerId,100).settings.wordSetName,'Animal night');assert.deepEqual(r.snapshot(b.playerId,100).settings.customWords,[]);
+ assert.throws(()=>r.choose(a.playerId,2,r.turnId,200));r.choose(a.playerId,0,r.turnId,200);assert.ok(chosen.includes(r.secret));
+});
+test('scheduled hints reveal only configured letters and stop when paused',()=>{
+ const {room:r,ids}=setup(2);r.secret='mountain';r.hintPositions=[0,1,2,3,4,5,6,7];r.settings.hints=2;
+ assert.equal(r.hint(100),'________');assert.equal(r.hint(30100),'m_______');assert.equal(r.hint(60100),'mo______');
+ r.disconnect(ids[1],30100);r.tick(30100);assert.equal(r.hint(50100),'m_______');
+ r.settings.hints=0;assert.equal(r.hint(50100),'________');
+});
+test('host may lock mid-game joining while keeping reconnect available',()=>{
+ const {room:r,sessions,ids}=setup(2);r.settings.allowLateJoin=false;assert.throws(()=>r.add('Late',2,1000));
+ r.disconnect(ids[1],1000);assert.equal(r.resume(sessions[1].token,1500),ids[1]);
+});

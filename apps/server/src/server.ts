@@ -49,7 +49,7 @@ export function createGameServer(){
  const timer=setInterval(()=>{
   store.sweep(Date.now());
   for(const r of store.rooms.values()){
-   const signature=JSON.stringify([r.phase,r.turnId,r.deadline,r.members.map(p=>[p.id,p.connected]),r.hostId]);
+   const signature=JSON.stringify([r.phase,r.turnId,r.deadline,r.hint(Date.now()),r.members.map(p=>[p.id,p.connected]),r.hostId]);
    if(last.get(r.code)!==signature){publish(r);last.set(r.code,signature);}
   }
   for(const code of last.keys())if(!store.rooms.has(code))last.delete(code);

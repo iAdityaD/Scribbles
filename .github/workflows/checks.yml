@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,3 +18,13 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run export:mobile
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
+        env:
+          UI_SCREENSHOT_DIR: ui-smoke-artifacts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: UI-smoke-screenshots
+          path: ui-smoke-artifacts/
+          if-no-files-found: ignore
