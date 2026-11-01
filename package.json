@@ -1,0 +1,27 @@
+{
+  "name": "scribbles",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:server": "node --import tsx --watch apps/server/src/index.ts",
+    "dev:mobile": "npm run start --workspace @scribbles/mobile",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "start:server": "node --import tsx apps/server/src/index.ts",
+    "export:mobile": "npm run export --workspace @scribbles/mobile"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.2",
+    "tsx": "^4.20.6",
+    "@types/node": "^22.18.0",
+    "@types/react": "~19.1.10"
+  },
+  "dependencies": {
+    "zod": "^4.1.0",
+    "socket.io-client": "^4.8.1"
+  }
+}

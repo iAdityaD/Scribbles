@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Scribbles",
+    "slug": "scribbles",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "scribbles",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.iadityad.scribbles",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    },
+    "android": {
+      "package": "com.iadityad.scribbles",
+      "adaptiveIcon": {
+        "backgroundColor": "#11151C",
+        "foregroundImage": "./assets/icon.png"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [],
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#11151C"
+    }
+  }
+}

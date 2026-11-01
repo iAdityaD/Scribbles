@@ -1,0 +1,65 @@
+name: Native test builds
+on:
+  push:
+    branches: [main]
+    paths: ['apps/mobile/**', 'packages/protocol/**', 'package-lock.json', '.github/workflows/native-builds.yml']
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: HTTPS multiplayer server URL (or leave blank and set in app Settings)
+        required: false
+        type: string
+      platform:
+        description: Build platform
+        required: true
+        default: android
+        type: choice
+        options: [android, ios, both]
+permissions:
+  contents: read
+jobs:
+  android:
+    if: github.event_name == 'push' || inputs.platform == 'android' || inputs.platform == 'both'
+    runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_SERVER_URL: ${{ inputs.server_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: npx expo prebuild --platform android --no-install
+        working-directory: apps/mobile
+      - run: ./gradlew assembleRelease --no-daemon
+        working-directory: apps/mobile/android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Scribbles-Android-test-APK
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+  ios:
+    if: github.event_name == 'push' || inputs.platform == 'ios' || inputs.platform == 'both'
+    runs-on: macos-latest
+    env:
+      EXPO_PUBLIC_SERVER_URL: ${{ inputs.server_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx expo prebuild --platform ios
+        working-directory: apps/mobile
+      - run: xcodebuild -workspace Scribbles.xcworkspace -scheme Scribbles -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build CODE_SIGNING_ALLOWED=NO
+        working-directory: apps/mobile/ios
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Scribbles-iOS-Simulator
+          path: apps/mobile/ios/build/Build/Products/Release-iphonesimulator/Scribbles.app

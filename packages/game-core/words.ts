@@ -1,0 +1,4 @@
+export const words = {
+ Classic: ['mountain','rainbow','bicycle','pizza','castle','guitar','rocket','snowman','umbrella','lighthouse','campfire','waterfall','island','airplane','suitcase','bridge','volcano','camera','robot','pirate','telescope','treehouse','birthday cake','hot air balloon','roller coaster','sandcastle','sunflower','headphones','skateboard','treasure chest','windmill','submarine','watermelon','popcorn','basketball','crown','snowflake','ladder','tent','sunglasses','butterfly','train','cloud','key','cactus','dragon','mermaid','book','clock','pencil'],
+ Animals: ['elephant','giraffe','penguin','dolphin','octopus','butterfly','kangaroo','crocodile','turtle','rabbit','flamingo','hedgehog','jellyfish','peacock','squirrel','panda','tiger','lion','whale','fox','owl','frog','snake','zebra','gorilla','crab','seahorse','bee','cat','dog'],
+};
