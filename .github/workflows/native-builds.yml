@@ -20,7 +20,7 @@ permissions:
 jobs:
   android:
     if: github.event_name == 'push' || inputs.platform == 'android' || inputs.platform == 'both'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       EXPO_PUBLIC_SERVER_URL: ${{ inputs.server_url }}
     steps:
@@ -29,11 +29,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - run: npm ci
       - run: npx expo prebuild --platform android --no-install
         working-directory: apps/mobile
