@@ -73,3 +73,24 @@ test('SocketTransport preserves online commands and snapshots through GameTransp
  const server=createGameServer();await new Promise<void>(r=>server.http.listen(0,'127.0.0.1',r));const port=(server.http.address() as {port:number}).port;const t=new SocketTransport(`http://127.0.0.1:${port}`);
  try{const connected=new Promise<void>(resolve=>t.subscribe(e=>{if(e.type==='connection'&&e.connected)resolve();}));await t.connect();await connected;assert.ok((await request(t,{type:'create',name:'Online',avatar:0,settings:defaults})).ok);assert.equal((await t.sync())?.players[0].name,'Online');}finally{t.disconnect();await server.close();}
 });
+
+test('cancelled pairing can restart cleanly without reusing a stale endpoint',async()=>{
+ Radio.radios.clear();const hr=new Radio('host'),gr=new Radio('guest');const h=new NearbyTransport(hr,webRandom),g=new NearbyTransport(gr,webRandom);
+ try{
+  await h.connect();await g.connect();const a=await request(h,{type:'create',name:'H',avatar:0,settings:localSettings});if(!a.ok||!a.session)throw Error();
+  const connect=gr.requestConnection.bind(gr);gr.requestConnection=async()=>{};
+  const joining=request(g,{type:'join',name:'G',avatar:1,code:a.session.code});await wait();g.disconnect();assert.equal((await joining).ok,false);
+  gr.requestConnection=connect;await g.connect();const joined=await request(g,{type:'join',name:'G',avatar:1,code:a.session.code});assert.ok(joined.ok);
+ }finally{h.disconnect();g.disconnect();}
+});
+
+test('in-flight request fails promptly on radio loss and does not poison the resumed seat',async()=>{
+ Radio.radios.clear();const hr=new Radio('host'),gr=new Radio('guest');const h=new NearbyTransport(hr,webRandom),g=new NearbyTransport(gr,webRandom);
+ try{
+  await h.connect();await g.connect();const a=await request(h,{type:'create',name:'H',avatar:0,settings:localSettings});if(!a.ok||!a.session)throw Error();
+  await request(g,{type:'join',name:'G',avatar:1,code:a.session.code});const before=(await g.sync())!;
+  const send=hr.send.bind(hr);let dropped=false;hr.send=async(id,data)=>{const frame=JSON.parse(data);if(!dropped&&JSON.parse(frame.data).type==='reply'){dropped=true;return;}return send(id,data);};
+  const pending=request(g,{type:'ready',ready:true});const failed=assert.rejects(pending,/interrupted/);await wait();await gr.disconnectEndpoint(hr.id);await failed;
+  hr.send=send;await wait(1000);assert.equal((await g.sync())?.me,before.me);
+ }finally{h.disconnect();g.disconnect();}
+});

@@ -28,19 +28,21 @@ export class NearbyTransport extends ObservableTransport implements GameTranspor
  private onRadio(e:RadioEvent){
   if(!this.live)return;
   if(e.type==='found'){if(!this.runtime&&e.name===`Scribbles:${this.code}`&&!this.target&&!this.attempts.has(e.endpointId)){
-   this.attempts.add(e.endpointId);this.target=e.endpointId;void this.bridge.requestConnection(e.endpointId,this.name).catch(error=>{this.target='';this.attempts.delete(e.endpointId);this.emit({type:'error',message:String(error)});});
+   const generation=this.generation;this.attempts.add(e.endpointId);this.target=e.endpointId;void this.bridge.requestConnection(e.endpointId,this.name).catch(error=>{if(generation!==this.generation)return;this.target='';this.attempts.delete(e.endpointId);this.emit({type:'error',message:String(error)});});
   }}
   else if(e.type==='lost'){this.attempts.delete(e.endpointId);}
   else if(e.type==='connected'){
    if(this.runtime){if(this.frames.size>=5){void this.bridge.disconnectEndpoint(e.endpointId);return;}this.wire(e.endpointId);this.runtime.connect(e.endpointId,event=>{void this.transmit(e.endpointId,'event',event).catch(()=>{});});}
    else if(e.endpointId===this.target){
+    const generation=this.generation;
     this.wire(e.endpointId);this.lastSeen=Date.now();void this.bridge.stopDiscovery().catch(()=>{});
     const request=this.session?{id:randomHex(this.random),command:{type:'resume' as const,...this.session}}:this.joining;
     if(request)void this.remoteRequest(request).then(ack=>{
+     if(generation!==this.generation)return;
      if(ack.ok){if(ack.session)this.session=ack.session;this.disconnectedAt=0;this.emit({type:'connection',connected:true});}
      else {this.emit({type:'error',message:ack.error});this.resetGuest();}
      this.finishJoin(ack);
-    }).catch(error=>{this.finishJoin({ok:false,error:String(error)});this.resetGuest();});
+    }).catch(error=>{if(generation!==this.generation)return;this.finishJoin({ok:false,error:String(error)});this.resetGuest();});
    }else void this.bridge.disconnectEndpoint(e.endpointId).catch(()=>{});
   }
   else if(e.type==='disconnected')this.lost(e.endpointId);
@@ -104,7 +106,7 @@ export class NearbyTransport extends ObservableTransport implements GameTranspor
  private lost(endpoint:string){
   this.frames.get(endpoint)?.close();this.frames.delete(endpoint);
   if(this.runtime){this.runtime.disconnect(endpoint);return;}
-  if(this.target!==endpoint)return;this.target='';this.attempts.delete(endpoint);
+  if(this.target!==endpoint)return;this.generation++;this.target='';for(const p of this.pending.values()){clearTimeout(p.timer);p.reject(Error('Nearby connection interrupted.'));}this.pending.clear();this.attempts.delete(endpoint);
   if(!this.session){this.finishJoin({ok:false,error:'Connection rejected or interrupted. Try joining again and confirm the code on both phones.'});this.resetGuest();return;}
   this.disconnectedAt ||= Date.now();this.emit({type:'connection',connected:false,message:'Host disconnected. Searching nearby for up to 60 seconds…'});
   this.nextDiscovery=Date.now()+500;
@@ -120,7 +122,7 @@ export class NearbyTransport extends ObservableTransport implements GameTranspor
   this.active=active;if(this.runtime){if(active)this.runtime.resume();else this.runtime.suspend();for(const endpoint of this.frames.keys())void this.transmit(endpoint,active?'active':'paused').catch(()=>{});}
   else if(active&&this.session&&!this.target)void this.bridge.discover().catch(()=>{});
  }
- private resetGuest(){this.session=null;this.code='';this.target='';this.disconnectedAt=0;this.attempts.clear();void this.stopRadio();}
+ private resetGuest(){this.generation++;this.session=null;this.code='';this.target='';this.disconnectedAt=0;this.attempts.clear();void this.stopRadio();}
  private async stopRadio(){for(const p of this.pending.values()){clearTimeout(p.timer);p.reject(Error('Connection closed.'));}this.pending.clear();for(const f of this.frames.values())f.close();this.frames.clear();await this.bridge.stop().catch(()=>{});}
- disconnect(){this.generation++;this.live=false;this.unlisten?.();this.unlisten=null;if(this.timer)clearInterval(this.timer);this.timer=null;this.finishJoin({ok:false,error:'Connection closed.'});this.runtime?.close();this.runtime=null;this.session=null;void this.stopRadio();}
+ disconnect(){this.generation++;this.live=false;this.unlisten?.();this.unlisten=null;if(this.timer)clearInterval(this.timer);this.timer=null;this.finishJoin({ok:false,error:'Connection closed.'});this.runtime?.close();this.runtime=null;this.session=null;this.target='';this.code='';this.disconnectedAt=0;this.lastSeen=0;this.lastPing=0;this.nextDiscovery=0;this.active=true;this.attempts.clear();void this.stopRadio();}
 }

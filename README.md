@@ -16,7 +16,7 @@ Host departure ends a local room; guest reconnects are supported while the host 
 - Room mode: **Random words** (Classic/Animals) or **Custom set** selected from a dropdown. Create, edit and delete named sets on your device. Each room receives its own copy.
 - More game options: 1–3 word choices, 0–3 timed letter hints, 10–30 seconds for word selection, and mid-game joining on/off.
 - Live normalized vector strokes, pencil, eraser, 8 colours, 3 brush sizes, undo/redo and confirmed clear.
-- Authority-owned word selection (Node online / creator’s phone offline),, turn deadlines, guessing, scoring, word reveal, leaderboard and rematch.
+- Authority-owned word selection (Node online / creator’s phone offline), turn deadlines, guessing, scoring, word reveal, leaderboard and rematch.
 - One conversation feed with Guess/Chat mode, hidden correct answers, spoiler filtering, local chat mute and host removal.
 - Reconnect tokens, state recovery, host transfer, late-join spectators, disconnect grace periods and input/rate/size validation.
 - Automated core and Socket.IO integration tests, CI, native build workflows and Docker deployment configuration.

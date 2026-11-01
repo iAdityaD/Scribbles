@@ -13,3 +13,13 @@ The initial playable implementation was checked on 1 November 2026.
 Native binary compilation status is reported by the [GitHub Actions workflows](https://github.com/iAdityaD/Scribbles/actions), not by JavaScript export. Physical-device testing, live HTTPS hosting and production signing remain release requirements. See TESTING.md for the device checklist.
 
 The custom-set update adds a repeatable UI smoke script covering minimum word count, persistence, dropdown selection and a full custom-word match.
+
+## Nearby architecture update — 2 November 2026
+
+- Audit completed before modification: baseline 16 tests and TypeScript checks passed.
+- All 23 tests pass after the update: existing core/socket tests plus SocketTransport, six simulated Nearby devices, word privacy, canvas recovery, live drawer chat, scoring, pairing rejection, permission denial, framing limits/order/Unicode, host suspension, cancellation and interrupted-request recovery.
+- Strict TypeScript check passes.
+- Android/iOS Hermes and web exports pass. Existing two-browser custom-word match, reload/reconnect, drawing, drawer-visible chat, results and rematch smoke test passes without browser errors.
+- Expo Android prebuild passes; local module autolinking resolves `com.iadityad.scribbles.nearby.ScribblesNearbyModule`. A stale local generated image cache needed regeneration; source artwork was unchanged.
+- GitHub checks on the initial architecture commit passed. Android native compilation is tracked by the native workflow; JavaScript export and simulated radios do not establish physical radio compatibility.
+- No physical phones are attached to this environment. The 4–6-device offline checklist in [NEARBY_MULTIPLAYER.md](NEARBY_MULTIPLAYER.md) remains a release gate. No internet backend was deployed or changed in hosting.
