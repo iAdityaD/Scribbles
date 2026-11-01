@@ -2,6 +2,12 @@
 
 Private drawing-and-guessing game for Android and iOS. Create a room, invite friends, draw live, guess, and chat. There is no public matchmaking.
 
+## Android offline and existing online play
+
+Choose **Nearby · Offline** to host on one Android phone with up to five guests using Google Nearby Connections. No external server is used in this mode. Use an Expo development build or bundled standalone APK, not Expo Go. Choose **Online** for the existing Socket.IO multiplayer. See [offline architecture, build instructions and device test checklist](docs/NEARBY_MULTIPLAYER.md).
+
+Host departure ends a local room; guest reconnects are supported while the host is alive. Physical 4–6-phone radio testing remains a release gate.
+
 ## Implemented
 
 - Shared React Native + Expo app with the supplied dark/yellow/cream visual direction, original vector cat artwork and app icon.
@@ -10,12 +16,12 @@ Private drawing-and-guessing game for Android and iOS. Create a room, invite fri
 - Room mode: **Random words** (Classic/Animals) or **Custom set** selected from a dropdown. Create, edit and delete named sets on your device. Each room receives its own copy.
 - More game options: 1–3 word choices, 0–3 timed letter hints, 10–30 seconds for word selection, and mid-game joining on/off.
 - Live normalized vector strokes, pencil, eraser, 8 colours, 3 brush sizes, undo/redo and confirmed clear.
-- Server-owned word selection, turn deadlines, guessing, scoring, word reveal, leaderboard and rematch.
+- Authority-owned word selection (Node online / creator’s phone offline),, turn deadlines, guessing, scoring, word reveal, leaderboard and rematch.
 - One conversation feed with Guess/Chat mode, hidden correct answers, spoiler filtering, local chat mute and host removal.
 - Reconnect tokens, state recovery, host transfer, late-join spectators, disconnect grace periods and input/rate/size validation.
 - Automated core and Socket.IO integration tests, CI, native build workflows and Docker deployment configuration.
 
-## Run locally
+## Run the online backend locally
 
 Node 22+ and npm are required. From the repository root:
 

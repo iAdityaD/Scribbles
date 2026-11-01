@@ -1,21 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
-import { AppState, Linking } from 'react-native';
+import { AppState, Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { io, type Socket } from 'socket.io-client';
 import * as Crypto from 'expo-crypto';
-import type { Ack, Command, Session, Snapshot, ServerEvents, ClientEvents } from '../../../packages/protocol/index';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import type { Ack, Command, Session, Snapshot } from '../../../packages/protocol/index';
+import type { GameTransport } from '../../../packages/network/transport';
+import { SocketTransport } from '../../../packages/network/SocketTransport';
+import { NearbyTransport } from '../../../packages/network/NearbyTransport';
+import { createNearbyBridge } from './network/nativeNearby';
 const DEFAULT_URL=process.env.EXPO_PUBLIC_SERVER_URL||'http://localhost:3001';
 export function useGame(){
  const [state,setState]=useState<Snapshot|null>(null),[connected,setConnected]=useState(false),[error,setError]=useState('');
  const [endpoint,setEndpoint]=useState(DEFAULT_URL),[loaded,setLoaded]=useState(false),[busy,setBusy]=useState(false);
+ const [mode,setMode]=useState<'socket'|'nearby'>('socket'),[connectionMessage,setConnectionMessage]=useState('Connecting to online server…');
  const [profile,setProfile]=useState({name:'',avatar:0}),[invite,setInvite]=useState('');
- const socket=useRef<Socket<ServerEvents,ClientEvents>|null>(null),session=useRef<Session|null>(null),clockOffset=useRef(0);
- const stateRef=useRef<Snapshot|null>(null);stateRef.current=state;
+ const transport=useRef<GameTransport|null>(null),session=useRef<Session|null>(null),clockOffset=useRef(0);
+ const operation=useRef(0);
  const accept=(s:Snapshot)=>{clockOffset.current=s.serverNow-Date.now();setState(s);};
  useEffect(()=>{
   let alive=true;
-  AsyncStorage.multiGet(['scribbles.profile','scribbles.session','scribbles.endpoint']).then(rows=>{
-   if(!alive)return;for(const [key,value]of rows)if(value){try{if(key.endsWith('profile'))setProfile(JSON.parse(value));if(key.endsWith('session'))session.current=JSON.parse(value);if(key.endsWith('endpoint'))setEndpoint(value);}catch{}}
+  AsyncStorage.multiGet(['scribbles.profile','scribbles.session','scribbles.endpoint','scribbles.mode']).then(rows=>{
+   if(!alive)return;for(const [key,value]of rows)if(value){try{if(key.endsWith('profile'))setProfile(JSON.parse(value));if(key.endsWith('session'))session.current=JSON.parse(value);if(key.endsWith('endpoint'))setEndpoint(value);if(key.endsWith('mode')&&value==='nearby'&&Platform.OS==='android')setMode('nearby');}catch{}}
    setLoaded(true);
   }).catch(()=>{setLoaded(true);setError('Local preferences could not be loaded.');});
   const link=(url:string)=>{const match=url.match(/(?:join\/|[?&]code=)([A-Z2-9]{6})/i);if(match)setInvite(match[1].toUpperCase());};
@@ -23,47 +28,62 @@ export function useGame(){
   return()=>{alive=false;sub.remove();};
  },[]);
  useEffect(()=>{
-  if(!loaded)return;
-  const s:Socket<ServerEvents,ClientEvents>=io(endpoint,{transports:['websocket'],reconnection:true,timeout:7000});socket.current=s;
-  const clear=()=>{session.current=null;setState(null);AsyncStorage.removeItem('scribbles.session').catch(()=>{});};
-  s.on('connect',()=>{
-   if(session.current){setConnected(false);s.timeout(6000).emit('command',{id:Crypto.randomUUID(),command:{type:'resume',...session.current}},(err:Error|null,result:Ack)=>{
-    if(err){setError('Reconnection timed out. Trying again…');s.disconnect().connect();return;}
-    if(!result.ok){clear();setError(result.error);}setConnected(true);
-   });}else setConnected(true);
-  });
-  s.on('disconnect',()=>setConnected(false));
-  s.on('connect_error',()=>{setConnected(false);});
-  s.on('state',accept);
-  s.on('stroke',event=>{
-   setState(prev=>{
-    if(!prev||prev.turnId!==event.turnId||event.revision<=prev.canvasRevision)return prev;
-    if(event.revision>prev.canvasRevision+1){s.emit('sync',fresh=>fresh&&accept(fresh));return prev;}
-    const strokes=[...prev.strokes];const i=strokes.findIndex(x=>x.id===event.stroke.id);if(i<0)strokes.push(event.stroke);else strokes[i]=event.stroke;
-    return {...prev,strokes,canvasRevision:event.revision};
+  if(!loaded)return;let alive=true;
+  const t:GameTransport=mode==='nearby'?new NearbyTransport(createNearbyBridge(),{bytes:length=>Crypto.getRandomBytes(length)}):new SocketTransport(endpoint);
+  transport.current=t;setConnected(false);setConnectionMessage(mode==='nearby'?'Nearby ready. No internet needed.':'Connecting to online server…');
+  const clear=()=>{session.current=null;setState(null);if(mode==='socket')AsyncStorage.removeItem('scribbles.session').catch(()=>{});};
+  const fresh=()=>void t.sync().then(s=>{if(alive&&s)accept(s);}).catch(()=>{});
+  const off=t.subscribe(event=>{
+   if(!alive)return;
+   if(event.type==='connection'){
+    setConnectionMessage(event.message??(event.connected?'Ready when you are':'Reconnecting…'));
+    if(event.connected&&mode==='socket'&&session.current){setConnected(false);void t.request({id:Crypto.randomUUID(),command:{type:'resume',...session.current}}).then(result=>{
+     if(!alive)return;if(!result.ok){clear();setError(result.error);}setConnected(true);
+    }).catch(()=>{if(alive){setError('Reconnection timed out. Trying again…');t.disconnect();void t.connect();}});}else setConnected(event.connected);
+   }else if(event.type==='state')accept(event.state);
+   else if(event.type==='stroke')setState(prev=>{
+    if(!prev||prev.turnId!==event.event.turnId||event.event.revision<=prev.canvasRevision)return prev;
+    if(event.event.revision>prev.canvasRevision+1){fresh();return prev;}
+    const strokes=[...prev.strokes];const i=strokes.findIndex(x=>x.id===event.event.stroke.id);if(i<0)strokes.push(event.event.stroke);else strokes[i]=event.event.stroke;
+    return {...prev,strokes,canvasRevision:event.event.revision};
    });
+   else if(event.type==='removed'){clear();setError(event.reason);}
+   else setError(event.message);
   });
-  s.on('removed',reason=>{clear();setError(reason);});
-  const sub=AppState.addEventListener('change',status=>{if(status==='active'){if(!s.connected)s.connect();else s.emit('sync',fresh=>{if(fresh)accept(fresh);});}});
-  return()=>{sub.remove();s.disconnect();socket.current=null;};
- },[endpoint,loaded]);
+  void t.connect().catch(e=>{if(alive)setError(String(e));});
+  const sub=AppState.addEventListener('change',status=>{t.setActive(status==='active');if(status==='active')fresh();});
+  return()=>{alive=false;sub.remove();off();t.disconnect();if(transport.current===t)transport.current=null;};
+ },[endpoint,loaded,mode]);
+ useEffect(()=>{
+  if(mode!=='nearby'||!state)return;
+  void activateKeepAwakeAsync('scribbles-room').catch(()=>{});
+  return()=>{void deactivateKeepAwake('scribbles-room').catch(()=>{});};
+ },[mode,!!state]);
  async function send(command:Command,quiet=false):Promise<boolean>{
-  const s=socket.current;if(!s?.connected||!connected){if(!quiet)setError('Reconnecting… Please wait for the connection.');return false;}
+  const t=transport.current;const op=operation.current;
+  if(!t||(!connected&&command.type!=='leave')){if(!quiet)setError(connectionMessage);return false;}
   if(!quiet)setBusy(true);
-  return new Promise(resolve=>s.timeout(6000).emit('command',{id:Crypto.randomUUID(),command},(err:Error|null,result:Ack)=>{
-   if(!quiet)setBusy(false);
-   if(err){if(!quiet)setError('No response yet. Reconnect to check the latest room state.');s.emit('sync',fresh=>fresh&&accept(fresh));resolve(false);return;}
-   if(!result.ok){if(!quiet)setError(result.error);if(command.type==='stroke')s.emit('sync',fresh=>fresh&&accept(fresh));resolve(false);return;}
-   if(result.session){session.current=result.session;AsyncStorage.setItem('scribbles.session',JSON.stringify(result.session)).catch(()=>setError('Could not save reconnect details.'));}
-   if(command.type==='leave'){session.current=null;setState(null);AsyncStorage.removeItem('scribbles.session').catch(()=>{});}
-   resolve(true);
-  }));
+  try{
+   const result:Ack=await t.request({id:Crypto.randomUUID(),command});
+   if(t!==transport.current||op!==operation.current)return false;
+   if(!result.ok){if(!quiet)setError(result.error);if(command.type==='stroke')void t.sync().then(s=>s&&accept(s)).catch(()=>{});return false;}
+   if(result.session){session.current=result.session;if(mode==='socket')AsyncStorage.setItem('scribbles.session',JSON.stringify(result.session)).catch(()=>setError('Could not save reconnect details.'));}
+   if(command.type==='leave'){session.current=null;setState(null);if(mode==='socket')AsyncStorage.removeItem('scribbles.session').catch(()=>{});}
+   return true;
+  }catch(e){if(op!==operation.current)return false;if(!quiet)setError(e instanceof Error?e.message:String(e));void t.sync().then(s=>s&&accept(s)).catch(()=>{});return false;}
+  finally{if(!quiet&&op===operation.current)setBusy(false);}
  }
+ function cancelPending(){if(mode!=='nearby'||state)return;operation.current++;transport.current?.disconnect();void transport.current?.connect();setBusy(false);setError('');}
  async function saveProfile(next:typeof profile){setProfile(next);await AsyncStorage.setItem('scribbles.profile',JSON.stringify(next)).catch(()=>{});}
+ async function saveMode(next:'socket'|'nearby'){
+  if(state||busy){setError('Leave your room before switching connection modes.');return;}
+  if(next==='nearby'&&Platform.OS!=='android'){setError('Nearby play is Android-only for now.');return;}
+  session.current=null;setMode(next);await AsyncStorage.multiRemove(['scribbles.session']);await AsyncStorage.setItem('scribbles.mode',next);
+ }
  async function saveEndpoint(url:string){
   try{const parsed=new URL(url.trim());if(!['http:','https:'].includes(parsed.protocol))throw Error();}catch{setError('Enter a valid http:// or https:// server address.');return false;}
-  if(session.current){setError('Leave the room before changing servers.');return false;}
+  if(state||busy){setError('Leave the room before changing servers.');return false;}
   setEndpoint(url.trim().replace(/\/$/,''));await AsyncStorage.setItem('scribbles.endpoint',url.trim().replace(/\/$/,'')).catch(()=>{});return true;
  }
- return {state,connected,error,setError,endpoint,saveEndpoint,profile,saveProfile,send,busy,loaded,clockOffset,invite,setInvite};
+ return {state,connected,error,setError,endpoint,saveEndpoint,mode,saveMode,cancelPending,connectionMessage,profile,saveProfile,send,busy,loaded,clockOffset,invite,setInvite};
 }

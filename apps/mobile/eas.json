@@ -4,11 +4,8 @@
   },
   "build": {
     "development": {
-      "developmentClient": false,
-      "distribution": "internal",
-      "env": {
-        "EXPO_PUBLIC_SERVER_URL": "https://YOUR-SERVER.example.com"
-      }
+      "developmentClient": true,
+      "distribution": "internal"
     },
     "preview": {
       "distribution": "internal",

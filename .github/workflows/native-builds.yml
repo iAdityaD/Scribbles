@@ -2,7 +2,7 @@ name: Native test builds
 on:
   push:
     branches: [main]
-    paths: ['apps/mobile/**', 'packages/protocol/**', 'package-lock.json', '.github/workflows/native-builds.yml']
+    paths: ['apps/mobile/**', 'packages/**', 'package-lock.json', '.github/workflows/native-builds.yml']
   workflow_dispatch:
     inputs:
       server_url:
@@ -46,7 +46,7 @@ jobs:
           name: Scribbles-Android-test-APK
           path: apps/mobile/android/app/build/outputs/apk/release/*.apk
   ios:
-    if: github.event_name == 'push' || inputs.platform == 'ios' || inputs.platform == 'both'
+    if: github.event_name == 'workflow_dispatch' && (inputs.platform == 'ios' || inputs.platform == 'both')
     runs-on: macos-latest
     env:
       EXPO_PUBLIC_SERVER_URL: ${{ inputs.server_url }}
