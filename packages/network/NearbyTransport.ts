@@ -97,7 +97,7 @@ export class NearbyTransport extends ObservableTransport implements GameTranspor
    return this.runtime.request(OWNER,request);
   }
   if(c.type==='leave'){
-   try{if(this.frames.has(this.target))await this.remoteRequest(request);}finally{this.resetGuest();this.emit({type:'connection',connected:true});}return {ok:true};
+   try{if(this.frames.has(this.target))await this.remoteRequest(request);}catch{/* Leaving is local intent even when the host is unreachable. */}finally{this.resetGuest();this.emit({type:'connection',connected:true});}return {ok:true};
   }
   return this.remoteRequest(request);
  }

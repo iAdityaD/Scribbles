@@ -92,5 +92,6 @@ test('in-flight request fails promptly on radio loss and does not poison the res
   const send=hr.send.bind(hr);let dropped=false;hr.send=async(id,data)=>{const frame=JSON.parse(data);if(!dropped&&JSON.parse(frame.data).type==='reply'){dropped=true;return;}return send(id,data);};
   const pending=request(g,{type:'ready',ready:true});const failed=assert.rejects(pending,/interrupted/);await wait();await gr.disconnectEndpoint(hr.id);await failed;
   hr.send=send;await wait(1000);assert.equal((await g.sync())?.me,before.me);
+  gr.send=async()=>{throw Error('Radio gone');};assert.ok((await request(g,{type:'leave'})).ok);assert.equal(await g.sync(),null);
  }finally{h.disconnect();g.disconnect();}
 });
