@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Circle, Rect, G } from 'react-native-svg';
 import { avatars, defaults, palette, type Settings, type Snapshot, type Command, type WordSet } from '../../../packages/protocol/index';
 import { useGame } from './useGame';
+import { onlineInviteLink, parseOnlineInvite } from '../../../packages/network/onlineAddress';
 import { DrawingCanvas } from './Canvas';
 import { useWordSets } from './useWordSets';
 import { WordSetManager } from './WordSetManager';
@@ -54,7 +55,19 @@ function AppContent(){
  useEffect(()=>{const t=setInterval(()=>setNow(Date.now()),250);return()=>clearInterval(t);},[]);
  useEffect(()=>{setUrl(game.endpoint);},[game.endpoint]);
  useEffect(()=>{if(game.mode==='nearby')setSettings(prev=>({...prev,maxPlayers:Math.min(6,prev.maxPlayers)}));},[game.mode]);
- useEffect(()=>{if(game.invite&&!state){setCode(game.invite);setPage('join');game.setInvite('');}},[game.invite,state]);
+ useEffect(()=>{
+  const invite=game.invite;if(!invite||!game.loaded||busy)return;
+  game.setInvite(null);
+  if(state){game.setError('Leave your current room before opening another invite.');return;}
+  const open=async()=>{
+   if(invite.server&&invite.server!==game.endpoint&&!await game.saveEndpoint(invite.server))return;
+   if(game.mode!=='socket')await game.saveMode('socket');
+   setCode(invite.code);setPage('join');
+  };
+  if(invite.server&&invite.server!==game.endpoint){
+   setConfirm({title:'Connect to this room server?',body:invite.server,action:()=>void open()});
+  }else void open();
+ },[game.invite,game.loaded,busy,state]);
  useEffect(()=>{const show=Keyboard.addListener('keyboardDidShow',()=>setKeyboard(true));const hide=Keyboard.addListener('keyboardDidHide',()=>setKeyboard(false));return()=>{show.remove();hide.remove();};},[]);
  useEffect(()=>{if(!state){setPlayersOpen(false);setMuted([]);}},[state?.code]);
  const me=state?.players.find(p=>p.id===state.me),isHost=state?.hostId===state?.me,drawer=state?.players.find(p=>p.id===state.drawerId),drawing=state?.phase==='drawing'&&state.drawerId===state.me;
@@ -68,7 +81,7 @@ function AppContent(){
  const useSet=(set:WordSet)=>{setSettings(prev=>({...prev,mode:'custom',wordSetName:set.name,customWords:[...set.words]}));closeWordSets();if(!state)setPage('create');};
  const saveSet=async(set:WordSet)=>{const previous=wordSets.sets.find(s=>s.id===set.id);const saved=await wordSets.save(set);if(previous&&settings.wordSetName===previous.name)setSettings(prev=>({...prev,wordSetName:saved.name,customWords:[...saved.words]}));return saved;};
  const deleteSet=async(id:string)=>{const previous=wordSets.sets.find(s=>s.id===id);await wordSets.remove(id);if(previous&&settings.wordSetName===previous.name)setSettings(prev=>({...prev,wordSetName:'',customWords:[]}));};
- const share=()=>{if(state)Share.share({message:`Draw • Guess • Laugh! Join my Scribbles room: ${state.code}\n${game.mode==='nearby'?'Choose Nearby in Scribbles and stay near the host.':`scribbles://join/${state.code}`}`}).catch(()=>game.setError('Could not open sharing.'));};
+ const share=()=>{if(state)Share.share({message:`Draw • Guess • Laugh! Join my Scribbles room: ${state.code}\n${game.mode==='nearby'?'Choose Nearby in Scribbles and stay near the host.':onlineInviteLink(state.code,game.endpoint)}`}).catch(()=>game.setError('Could not open sharing.'));};
  return <SafeAreaView style={S.safe}><StatusBar style="light"/><KeyboardAvoidingView style={S.root} behavior={Platform.OS==='ios'?'padding':'height'}>
  <View style={S.container}>
  {!state ? <>
@@ -82,9 +95,12 @@ function AppContent(){
    <Text style={S.caption}>{game.mode==='nearby'?'Nearby · Offline · Up to 6 players':'Online · Socket.IO'}</Text>
    <Text style={S.title}>{page==='create'?'Make room\nfor some fun.':'Got a code?\nYou’re invited.'}</Text>
    <Pressable style={[S.panel,S.row]} onPress={()=>setProfileOpen(true)}><Text style={{fontSize:34}}>{avatars[profile.avatar]}</Text><View style={{flex:1}}><Text style={S.caption}>PLAYING AS</Text><Text style={S.h3}>{profile.name||'Choose your nickname'}</Text></View><Icon name="pencil-outline"/></Pressable>
-   {page==='create'?<View style={[S.panel,{gap:20}]}><RoomSettings value={settings} onChange={setSettings} sets={wordSets.sets} maxPlayers={game.mode==='nearby'?6:12} onManage={()=>openWordSets(settingsOpen)}/></View>:<><Label>ROOM CODE</Label><TextInput accessibilityLabel="Room code" autoCapitalize="characters" autoCorrect={false} maxLength={6} value={code} onChangeText={v=>setCode(v.toUpperCase().replace(/[^A-Z2-9]/g,''))} placeholder="ABC123" placeholderTextColor="#657184" style={[S.input,S.codeInput]}/><Text style={S.caption}>{game.mode==='nearby'?'Stay near the host. Turn on Wi-Fi and Bluetooth, enter their room code, then confirm the matching pairing code on both phones. No internet needed.':'Ask your friend for the six-character room code.'}</Text></>}
+   {page==='create'?<View style={[S.panel,{gap:20}]}><RoomSettings value={settings} onChange={setSettings} sets={wordSets.sets} maxPlayers={game.mode==='nearby'?6:12} onManage={()=>openWordSets(settingsOpen)}/></View>:<><Label>ROOM CODE</Label><TextInput accessibilityLabel="Room code" autoCapitalize="characters" autoCorrect={false} maxLength={6} value={code} onChangeText={v=>setCode(v.toUpperCase().replace(/[^A-Z2-9]/g,''))} placeholder="ABC123" placeholderTextColor="#657184" style={[S.input,S.codeInput]}/><Text style={S.caption}>{game.mode==='nearby'?'Stay near the host. Turn on Wi-Fi and Bluetooth, enter their room code, then confirm the matching pairing code on both phones. No internet needed.':'Ask your friend for the six-character room code.'}</Text>{game.mode==='socket'&&<Button secondary title="Paste invite" icon="clipboard-outline" onPress={()=>void Clipboard.getStringAsync().then(text=>{
+    const link=text.match(/scribbles:\/\/join\/[^\s]+/i)?.[0];const invite=link&&parseOnlineInvite(link);
+    if(invite)game.setInvite(invite);else game.setError('Copy the online room invitation from your friend first.');
+   }).catch(()=>game.setError('Could not read the clipboard.'))}/>}</>}
    <Button title={busy?'One moment…':page==='create'?'Create private room':'Join the room'} icon={page==='create'?'add':'arrow-forward'} disabled={busy||!connected||(page==='join'&&code.length!==6)||(page==='create'&&settings.mode==='custom'&&!settings.wordSetName)} onPress={()=>void (page==='create'?create():join())}/>
-   {!connected&&<Text style={S.caption}>{game.connectionMessage}</Text>}
+   {!connected&&<><Text style={S.caption}>{game.connectionMessage}</Text>{game.mode==='socket'&&<Button title="Set online server" secondary onPress={()=>setServerOpen(true)}/>}</>}
   </ScrollView>}
  </>:state.phase==='lobby'?<>
   <View style={S.header}><IconButton name="arrow-back" label="Leave room" onPress={leave}/><Text style={S.h2}>Room lobby</Text><IconButton name="options-outline" label="Room settings" onPress={isHost?openSettings:()=>setHelpOpen(true)}/></View>
@@ -117,7 +133,7 @@ function AppContent(){
  <WordSetManager open={wordSetsOpen} onClose={closeWordSets} sets={wordSets.sets} loaded={wordSets.loaded} loadError={wordSets.error} onSave={saveSet} onDelete={deleteSet} onUse={useSet}/>
  <Sheet title="Your player" open={profileOpen} onClose={()=>setProfileOpen(false)}><Label>NICKNAME</Label><TextInput accessibilityLabel="Nickname" style={S.input} value={profile.name} maxLength={20} placeholder="What should we call you?" placeholderTextColor={C.muted} onChangeText={name=>void game.saveProfile({...profile,name})}/><Label>PICK YOUR FACE</Label><View style={{flexDirection:'row',flexWrap:'wrap',gap:14}}>{avatars.map((a,i)=><Pressable key={a} accessibilityLabel={`Avatar ${i+1}`} style={[S.avatarChoice,profile.avatar===i&&{borderColor:C.yellow}]} onPress={()=>void game.saveProfile({...profile,avatar:i})}><Text style={{fontSize:32}}>{a}</Text></Pressable>)}</View><Button title="Looking good" disabled={!profile.name.trim()} onPress={()=>setProfileOpen(false)}/>{state&&<Text style={S.caption}>Profile changes apply when you next join a room.</Text>}</Sheet>
  <Sheet title="Room settings" open={settingsOpen} onClose={()=>setSettingsOpen(false)}><RoomSettings value={settings} onChange={setSettings} sets={wordSets.sets} maxPlayers={game.mode==='nearby'?6:12} onManage={()=>openWordSets(settingsOpen)}/><Button title="Save settings" onPress={()=>void send({type:'settings',settings:{...settings,maxPlayers:game.mode==='nearby'?Math.min(6,settings.maxPlayers):settings.maxPlayers,customWords:settings.customWords.map(w=>w.trim()).filter(Boolean)}}).then(ok=>ok&&setSettingsOpen(false))}/></Sheet>
- <Sheet title="Settings" open={serverOpen} onClose={()=>setServerOpen(false)}><Text style={S.h3}>Scribbles · v0.1.0</Text><Text style={S.caption}>Private rooms. Shared laughs. No public matchmaking.</Text><Label>ONLINE GAME SERVER</Label><TextInput accessibilityLabel="Game server address" style={S.input} autoCapitalize="none" autoCorrect={false} value={url} onChangeText={setUrl} placeholder="https://your-server.example.com" placeholderTextColor={C.muted}/><Text style={S.caption}>Online rooms use this server address. Nearby rooms work offline and ignore this setting.</Text><Button title="Save connection" onPress={()=>void game.saveEndpoint(url).then(ok=>ok&&setServerOpen(false))}/></Sheet>
+ <Sheet title="Settings" open={serverOpen} onClose={()=>setServerOpen(false)}><Text style={S.h3}>Scribbles · v0.1.0</Text><Text style={S.caption}>Private rooms. Shared laughs. No public matchmaking.</Text><Label>ONLINE GAME SERVER</Label><TextInput accessibilityLabel="Game server address" style={S.input} autoCapitalize="none" autoCorrect={false} value={url} onChangeText={setUrl} placeholder="https://your-server.example.com" placeholderTextColor={C.muted}/><Text style={S.caption}>Online rooms use this server address. Nearby rooms work offline and ignore this setting.</Text><Button title={busy?'Checking server…':'Save connection'} disabled={busy} onPress={()=>void game.saveEndpoint(url).then(ok=>ok&&setServerOpen(false))}/></Sheet>
  <Sheet title="A little friendly competition" open={helpOpen} onClose={()=>setHelpOpen(false)}>{[['01','Get the gang together','Create a private room, share its code, and wait for everyone to ready up.'],['02','Draw your secret word','Pick one of three words. Draw with your finger while your friends guess. No letters or spelling out the answer!'],['03','Guess, chat, repeat','Use Guess to submit answers or Chat to talk. Faster correct guesses earn 100–500 points; the drawer earns 50 per correct guess.'],['04','Everyone gets a turn','Each round gives every active player a drawing turn. New arrivals watch until the next round. Highest score wins.']].map(([n,t,d])=><View key={n} style={S.row}><Text style={[S.rank,{color:C.yellow}]}>{n}</Text><View style={{flex:1,gap:6}}><Text style={S.h3}>{t}</Text><Text style={S.caption}>{d}</Text></View></View>)}</Sheet>
  <Sheet title="The crew" open={playersOpen&&!!state} onClose={()=>setPlayersOpen(false)}>{state?.players.map(p=><View key={p.id} style={S.playerRow}><Text style={{fontSize:28}}>{avatars[p.avatar]}</Text><View style={{flex:1}}><Text style={S.h3}>{p.name}</Text><Text style={S.caption}>{p.score} pts · {p.spectator?'Watching':p.connected?'Connected':'Reconnecting'}</Text></View>{p.id!==state.me&&<IconButton name={muted.includes(p.id)?'volume-mute-outline':'volume-medium-outline'} label={muted.includes(p.id)?'Unmute chat':'Mute chat'} onPress={()=>setMuted(prev=>prev.includes(p.id)?prev.filter(x=>x!==p.id):[...prev,p.id])}/>} {isHost&&p.id!==state.me&&<IconButton name="person-remove-outline" label="Remove player" onPress={()=>{setPlayersOpen(false);setConfirm({title:`Remove ${p.name}?`,body:'They will lose their current seat and score.',action:()=>void send({type:'kick',playerId:p.id})});}}/>}</View>)}</Sheet>
  <Modal transparent visible={!!confirm} animationType="fade" onRequestClose={()=>setConfirm(null)}><View style={S.dialogOverlay}><View style={S.dialog}><Text style={S.h2}>{confirm?.title}</Text><Text style={S.caption}>{confirm?.body}</Text><Button title="Yes, continue" onPress={()=>{const action=confirm?.action;setConfirm(null);action?.();}}/><Button title="Cancel" secondary onPress={()=>setConfirm(null)}/></View></View></Modal>

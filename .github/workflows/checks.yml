@@ -17,7 +17,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - run: npm run export:mobile
+      - run: npx expo export --platform android --platform web
+        working-directory: apps/mobile
       - run: npx playwright install --with-deps chromium
       - run: npm run test:ui
         env:

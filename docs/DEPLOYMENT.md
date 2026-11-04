@@ -1,10 +1,10 @@
 # Server deployment
 
-1. Build the root Dockerfile and run one instance with port 3001 exposed, or use the `render.yaml` blueprint. Its `starter` plan is a paid, always-on template; review pricing in your hosting account before provisioning.
+1. Build the root Dockerfile and run one instance with port 3001 exposed, or use the `render.yaml` blueprint. The blueprint selects a free instance for private friend-group testing. [Deploy the Scribbles backend on Render](https://render.com/deploy?repo=https://github.com/iAdityaD/Scribbles). Sign in to Render and connect this repository. Copy the HTTPS address assigned to the web service after its health check succeeds. Free instances can sleep while idle and take time to wake.
 2. Put the service behind HTTPS with WebSocket upgrade support. Configure a proxy idle timeout above the Socket.IO ping interval (e.g. 90 seconds). Do not enable multiple replicas: rooms are process-local.
 3. Set `ALLOWED_ORIGINS` to comma-separated web origins if using web clients. Native clients do not use browser CORS. Do not mistake CORS for authentication.
 4. Verify `GET /health` returns `{"ok":true,"rooms":0}` before inviting players.
-5. Set `EXPO_PUBLIC_SERVER_URL=https://your-host` in your mobile build environment. Alternatively, enter that address in the app's Settings. The URL is public configuration, not a secret.
+5. Set `EXPO_PUBLIC_SERVER_URL=https://your-host` in your mobile build environment. For GitHub Actions builds, set the repository Actions variable `SCRIBBLES_SERVER_URL` to that HTTPS origin. Alternatively, the host can enter it in Android Settings, then share an invite containing both the server and room code. A friend can open the invite or paste it on the join screen and confirm the server. The URL is public configuration, not a secret.
 6. Test two physical devices on different networks: room join, live drawing, guesses, chat, reconnect, rematch.
 
 Local container example (after configuring your Docker environment):

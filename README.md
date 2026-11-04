@@ -40,7 +40,7 @@ npm run dev:mobile
 
 The server listens on port 3001. Both devices must reach the **same** server. On a physical phone, `localhost` means the phone, not your computer. Use an HTTPS endpoint for standalone native builds. An Expo SDK 54-compatible development environment is needed; if the current Expo Go client no longer supports SDK 54, use a development build or the native workflow below.
 
-The app also exposes **Settings → Game server** for self-hosted play. A configured build uses `EXPO_PUBLIC_SERVER_URL`; a local fallback is `http://localhost:3001`. No public backend is bundled or deployed by this repository.
+The app also exposes **Settings → Game server** for self-hosted play. Set the Actions variable `SCRIBBLES_SERVER_URL` to embed your public HTTPS server in Android builds, or set it on the host phone in Settings. Share an online invitation so friends can open it or paste it to join the same server. Debug and web clients default to localhost. [Deploy the free friend-room backend](https://render.com/deploy?repo=https://github.com/iAdityaD/Scribbles).
 
 Open the app in two devices/sessions. Set nicknames, create a room on the first, join its code on the second, mark the second ready, then start as host.
 
