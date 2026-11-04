@@ -2,7 +2,7 @@ import type { Ack, Request, Snapshot } from '../protocol/index.ts';
 import type { GameEvent } from '../game-core/runtime.ts';
 export type TransportEvent=GameEvent|{type:'connection';connected:boolean;message?:string}|{type:'error';message:string};
 export interface GameTransport {
- readonly kind:'socket'|'nearby';
+ readonly kind:'socket'|'nearby'|'mesh';
  subscribe(listener:(event:TransportEvent)=>void):()=>void;
  connect():Promise<void>;
  disconnect():void;

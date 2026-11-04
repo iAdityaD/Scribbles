@@ -4,6 +4,7 @@ export type RadioEvent=
  |{type:'connected';endpointId:string}|{type:'disconnected';endpointId:string}
  |{type:'payload';endpointId:string;data:string}|{type:'error';endpointId?:string;message:string};
 export interface NearbyBridge {
+ bindSeat?(endpoint:string,playerId:string):void;
  prepare():Promise<void>;
  subscribe(listener:(event:RadioEvent)=>void):()=>void;
  advertise(name:string):Promise<void>;

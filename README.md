@@ -2,11 +2,17 @@
 
 Private drawing-and-guessing game for Android and iOS. Create a room, invite friends, draw live, guess, and chat. There is no public matchmaking.
 
-## Android offline and existing online play
+## Android rooms
 
-Choose **Nearby · Offline** to host on one Android phone with up to five guests using Google Nearby Connections. No external server is used in this mode. Use an Expo development build or bundled standalone APK, not Expo Go. Choose **Online** for the existing Socket.IO multiplayer. See [offline architecture, build instructions and device test checklist](docs/NEARBY_MULTIPLAYER.md).
+Choose **Nearby · Offline** for friends in the same place or **Online** for a private internet room. Both modes support six players including the host and run the game rules on the creator’s phone.
 
-Host departure ends a local room; guest reconnects are supported while the host is alive. Physical 4–6-phone radio testing remains a release gate.
+For Online, create a room and tap **Invite friends → Create peer invitation**. Send it privately to one friend. They select **Online → Join with a code → Pair with host**, paste the invitation, create a reply, and send it back. The host accepts the reply. The friend closes the pairing panel and taps **Join the room**. Repeat with a fresh invitation for each player.
+
+Internet rooms exchange WebRTC connection descriptions through that private conversation. Existing host connections introduce guests to each other. Every phone publishes and consumes events. Peer links carry live pen positions and typing notices. The host validates guesses and drawing commands, assigns scores and publishes per-player game views. If a guest pair cannot connect directly, its events can travel through their host connections. Leaving as host ends the match.
+
+Android uses a public STUN service to discover addresses. On restrictive mobile networks, configure a TURN relay in Settings before exchanging invitations or switch networks. There is no hosted game or signaling service in this flow. Pairing messages contain connection addresses, expire in ten minutes, and should only be shared with the intended friend. The six-character code identifies the match but cannot locate another phone across the internet by itself.
+
+The browser client retains its Socket.IO backend. [Nearby device testing and architecture](docs/NEARBY_MULTIPLAYER.md).
 
 ## Implemented
 

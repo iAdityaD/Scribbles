@@ -10,15 +10,15 @@ const envelope=z.object({v:z.literal(1),type:z.enum(['request','reply','sync','s
 type Pending={resolve:(value:any)=>void;reject:(e:Error)=>void;timer:ReturnType<typeof setTimeout>};
 /** One device owns the authority. Guests never receive secrets or other seat tokens. */
 export class NearbyTransport extends ObservableTransport implements GameTransport {
- readonly kind='nearby' as const;
+
  private runtime:HostRuntime|null=null;private frames=new Map<string,FramedPeer>();private pending=new Map<string,Pending>();
  private unlisten:(()=>void)|null=null;private timer:ReturnType<typeof setInterval>|null=null;
  private target='';private code='';private name='';private session:Session|null=null;
  private joining:Request|null=null;private joiningResolve:((ack:Ack)=>void)|null=null;private joinTimer:ReturnType<typeof setTimeout>|null=null;
  private live=false;private active=true;private lastSeen=0;private lastPing=0;private disconnectedAt=0;
  private attempts=new Set<string>();private nextDiscovery=0;private generation=0;
- constructor(private bridge:NearbyBridge,private random:RandomSource){super();}
- async connect(){if(this.live)return;this.live=true;this.unlisten=this.bridge.subscribe(e=>this.onRadio(e));this.timer=setInterval(()=>this.tick(),250);this.emit({type:'connection',connected:true,message:'Nearby ready. No internet needed.'});}
+ constructor(private bridge:NearbyBridge,private random:RandomSource,readonly kind:'nearby'|'mesh'='nearby'){super();}
+ async connect(){if(this.live)return;this.live=true;this.unlisten=this.bridge.subscribe(e=>this.onRadio(e));this.timer=setInterval(()=>this.tick(),250);this.emit({type:'connection',connected:true,message:this.kind==='mesh'?'Peer rooms ready.':'Nearby ready. No internet needed.'});}
  private packet(type:string,body?:unknown,id?:string){return {v:1,type,body,id};}
  private async transmit(endpoint:string,type:string,body?:unknown,id?:string){const frame=this.frames.get(endpoint);if(!frame)throw Error('Nearby connection is not ready.');await frame.send(this.packet(type,body,id));}
  private wire(endpoint:string){
@@ -32,7 +32,7 @@ export class NearbyTransport extends ObservableTransport implements GameTranspor
   }}
   else if(e.type==='lost'){this.attempts.delete(e.endpointId);}
   else if(e.type==='connected'){
-   if(this.runtime){if(this.frames.size>=5){void this.bridge.disconnectEndpoint(e.endpointId);return;}this.wire(e.endpointId);this.runtime.connect(e.endpointId,event=>{void this.transmit(e.endpointId,'event',event).catch(()=>{});});}
+   if(this.runtime){if(this.frames.size>=5){void this.bridge.disconnectEndpoint(e.endpointId);return;}this.wire(e.endpointId);this.runtime.connect(e.endpointId,event=>{if(event.type==='state')this.bridge.bindSeat?.(e.endpointId,event.state.me);void this.transmit(e.endpointId,'event',event).catch(()=>{});});}
    else if(e.endpointId===this.target){
     const generation=this.generation;
     this.wire(e.endpointId);this.lastSeen=Date.now();void this.bridge.stopDiscovery().catch(()=>{});
@@ -79,7 +79,7 @@ export class NearbyTransport extends ObservableTransport implements GameTranspor
   if(c.type==='create'){
    await this.bridge.prepare();if(!this.live||generation!==this.generation)throw Error('Connection closed.');
    if(this.runtime||this.session)throw Error('Leave your current room first.');
-   const runtime=new HostRuntime({random:this.random,owner:OWNER,maxPlayers:6});this.runtime=runtime;runtime.connect(OWNER,e=>{if(this.runtime===runtime)this.emit(e);});
+   const runtime=new HostRuntime({random:this.random,owner:OWNER,maxPlayers:6});this.runtime=runtime;runtime.connect(OWNER,e=>{if(this.runtime===runtime){if(e.type==='state')this.bridge.bindSeat?.(OWNER,e.state.me);this.emit(e);}});
    const ack=runtime.request(OWNER,request);
    if(!ack.ok){this.runtime=null;return ack;}
    this.code=ack.session!.code;
@@ -89,7 +89,7 @@ export class NearbyTransport extends ObservableTransport implements GameTranspor
   if(c.type==='join'&&!this.runtime){
    if(this.session||this.joining)throw Error('Leave your current room first.');await this.bridge.prepare();if(!this.live||generation!==this.generation)throw Error('Connection closed.');
    this.code=c.code;this.name=c.name;this.joining=request;this.attempts.clear();
-   const result=new Promise<Ack>(resolve=>{this.joiningResolve=resolve;this.joinTimer=setTimeout(()=>{this.finishJoin({ok:false,error:'Room not found or pairing timed out. Keep both phones nearby with Wi-Fi and Bluetooth on; confirm the matching code on both phones.'});this.resetGuest();},45000);});
+   const result=new Promise<Ack>(resolve=>{this.joiningResolve=resolve;this.joinTimer=setTimeout(()=>{this.finishJoin({ok:false,error:this.kind==='mesh'?'Could not reach the host. Have the host apply your reply. If the network blocks a direct connection, try another network or a TURN relay.':'Room not found or pairing timed out. Confirm the matching code on both phones.'});this.resetGuest();},45000);});
    try{await this.bridge.discover();}catch(e){this.finishJoin({ok:false,error:String(e)});this.resetGuest();}return result;
   }
   if(this.runtime){
@@ -108,7 +108,7 @@ export class NearbyTransport extends ObservableTransport implements GameTranspor
   if(this.runtime){this.runtime.disconnect(endpoint);return;}
   if(this.target!==endpoint)return;this.generation++;this.target='';for(const p of this.pending.values()){clearTimeout(p.timer);p.reject(Error('Nearby connection interrupted.'));}this.pending.clear();this.attempts.delete(endpoint);
   if(!this.session){this.finishJoin({ok:false,error:'Connection rejected or interrupted. Try joining again and confirm the code on both phones.'});this.resetGuest();return;}
-  this.disconnectedAt ||= Date.now();this.emit({type:'connection',connected:false,message:'Host disconnected. Searching nearby for up to 60 seconds…'});
+  this.disconnectedAt ||= Date.now();this.emit({type:'connection',connected:false,message:this.kind==='mesh'?'Host disconnected. Pair again within 60 seconds to recover your seat.':'Host disconnected. Searching nearby for up to 60 seconds…'});
   this.nextDiscovery=Date.now()+500;
  }
  private tick(){

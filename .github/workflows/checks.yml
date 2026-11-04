@@ -20,6 +20,7 @@ jobs:
       - run: npx expo export --platform android --platform web
         working-directory: apps/mobile
       - run: npx playwright install --with-deps chromium
+      - run: node tests/mesh-browser.cjs
       - run: npm run test:ui
         env:
           UI_SCREENSHOT_DIR: ui-smoke-artifacts
