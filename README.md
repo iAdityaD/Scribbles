@@ -10,7 +10,7 @@ For Online, create a room and tap **Invite friends → Create peer invitation**.
 
 Internet rooms exchange WebRTC connection descriptions through that private conversation. Existing host connections introduce guests to each other. Every phone publishes and consumes events. Peer links carry live pen positions and typing notices. The host validates guesses and drawing commands, assigns scores and publishes per-player game views. If a guest pair cannot connect directly, its events can travel through their host connections. Leaving as host ends the match.
 
-Android uses a public STUN service to discover addresses. On restrictive mobile networks, configure a TURN relay in Settings before exchanging invitations or switch networks. There is no hosted game or signaling service in this flow. Pairing messages contain connection addresses, expire in ten minutes, and should only be shared with the intended friend. The six-character code identifies the match but cannot locate another phone across the internet by itself.
+Android uses a public STUN service to discover addresses. You can disable STUN and leave the relay blank to attempt a connection using only directly reachable addresses. On restrictive mobile networks, configure a TURN relay in Settings before exchanging invitations or switch networks. There is no hosted game or signaling service in this flow. Pairing messages contain connection addresses, expire in ten minutes, and should only be shared with the intended friend. The six-character code identifies the match but cannot locate another phone across the internet by itself.
 
 The browser client retains its Socket.IO backend. [Nearby device testing and architecture](docs/NEARBY_MULTIPLAYER.md).
 

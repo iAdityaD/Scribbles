@@ -45,12 +45,13 @@ export class MeshBridge implements NearbyBridge {
     for(const [peer,e] of this.edges)if(e.open)this.write(peer,roster);
   }
   get code(){return this.room;}
+  get connectedPeerCount(){return [...this.edges.values()].filter(edge=>edge.open).length;}
   private emit(event:RadioEvent){for(const fn of this.listeners)fn(event);}
   private get owner(){return this.host===this.self;}
   async prepare(){}
-  configureRelay(url:string,username:string,credential:string){
+  configureRelay(url:string,username:string,credential:string,useStun=true){
     if(url&&!/^turns?:[^\s/@]+(?::\d+)?(?:\?transport=(?:tcp|udp))?$/i.test(url))throw Error('Enter a turn: or turns: relay address.');
-    this.iceServers=[{urls:'stun:stun.l.google.com:19302'}];
+    this.iceServers=useStun?[{urls:'stun:stun.l.google.com:19302'}]:[];
     if(url)this.iceServers.push({urls:url,username,credential});
   }
   async advertise(name:string){await this.stop();this.room=name.replace(/^Scribbles:/,'');this.host=this.self;}
@@ -62,7 +63,7 @@ export class MeshBridge implements NearbyBridge {
   async requestConnection(id:string){if(id!==this.host||!this.edges.get(id)?.open)throw Error('Host connection is not ready.');this.emit({type:'connected',endpointId:id});}
   private drop(id:string,edge:Edge){
     if(this.edges.get(id)!==edge)return;
-    this.edges.delete(id);this.offers.delete(id);this.dialed.delete(id);this.seats.delete(id);clearTimeout(edge.timer);
+    this.edges.delete(id);this.offers.delete(id);this.dialed.delete(id);if(this.owner)this.seats.delete(id);clearTimeout(edge.timer);
     edge.channel?.close();edge.pc.close();
     if(edge.hub&&edge.open)this.emit({type:'disconnected',endpointId:id});
   }

@@ -14,7 +14,7 @@ async function main(){
  const bridge=new MeshBridge(()=>{
    const pc=new RTCPeerConnection({iceServers:[]});window.pcs.push(pc);return pc;
  },()=>crypto.randomUUID());
- bridge.onTyping(()=>window.typingCount++);
+ bridge.onTyping(()=>window.typingCount++);window.cursors=[];bridge.onPen(p=>window.cursors.push(p));
  const t=new NearbyTransport(bridge,{bytes:n=>crypto.getRandomValues(new Uint8Array(n))},'mesh');
  window.bridge=bridge;window.t=t;window.cmd=c=>t.request({id:crypto.randomUUID(),command:c});
  window.makeRoom=()=>window.cmd({type:'create',name:'Host',avatar:0,settings:{...defaults,maxPlayers:6}});
@@ -47,6 +47,7 @@ async function main(){
   assert.equal((await b.evaluate(()=>t.sync())).word,undefined);
   await command(host,{type:'stroke',turnId:draw.turnId,stroke:{id:'pencil',width:5,color:'#20242D',points:[{x:.1,y:.1},{x:.2,y:.2}]}});
   assert.equal((await a.evaluate(()=>t.sync())).strokes.length,1);
+  await host.evaluate(turn=>bridge.publishPen(turn,.2,.3),draw.turnId);await b.waitForFunction(()=>cursors.some(c=>c.x===.2&&c.y===.3));
   await command(a,{type:'message',mode:'chat',text:'Can the drawer see me?',turnId:draw.turnId});
   assert.equal((await host.evaluate(()=>t.sync())).messages.at(-1).text,'Can the drawer see me?');
   // Suppress the host route briefly to prove that publication travels directly between guests.

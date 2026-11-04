@@ -89,7 +89,7 @@ export class NearbyTransport extends ObservableTransport implements GameTranspor
   if(c.type==='join'&&!this.runtime){
    if(this.session||this.joining)throw Error('Leave your current room first.');await this.bridge.prepare();if(!this.live||generation!==this.generation)throw Error('Connection closed.');
    this.code=c.code;this.name=c.name;this.joining=request;this.attempts.clear();
-   const result=new Promise<Ack>(resolve=>{this.joiningResolve=resolve;this.joinTimer=setTimeout(()=>{this.finishJoin({ok:false,error:this.kind==='mesh'?'Could not reach the host. Have the host apply your reply. If the network blocks a direct connection, try another network or a TURN relay.':'Room not found or pairing timed out. Confirm the matching code on both phones.'});this.resetGuest();},45000);});
+   const result=new Promise<Ack>(resolve=>{this.joiningResolve=resolve;this.joinTimer=setTimeout(()=>{this.finishJoin({ok:false,error:this.kind==='mesh'?'Could not reach the host. Have the host apply your reply. If the network blocks a direct connection, try another network or a TURN relay.':'Room not found or pairing timed out. Confirm the matching code on both phones.'});this.resetGuest();},this.kind==='mesh'?120000:45000);});
    try{await this.bridge.discover();}catch(e){this.finishJoin({ok:false,error:String(e)});this.resetGuest();}return result;
   }
   if(this.runtime){

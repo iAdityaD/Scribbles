@@ -20,7 +20,10 @@
       "adaptiveIcon": {
         "backgroundColor": "#11151C",
         "foregroundImage": "./assets/icon.png"
-      }
+      },
+      "permissions": [
+        "android.permission.ACCESS_NETWORK_STATE"
+      ]
     },
     "web": {
       "bundler": "metro"
