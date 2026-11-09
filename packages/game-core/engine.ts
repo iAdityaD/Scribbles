@@ -3,9 +3,16 @@ import type { Command, Player, Settings, Snapshot, Stroke, Message, Phase, Sessi
 import { words } from './words.ts';
 export const normalize = (s:string) => s.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]/g,'');
 export class GameError extends Error {}
+const wordsOf = (s:string) => s.normalize('NFKC').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+/** True when the text contains the answer as whole word(s), even spaced out ("c a t"), but not inside other words ("category"). */
+export function containsAnswer(text:string,secret:string){
+ const target=wordsOf(secret).join('');if(!target)return false;const w=wordsOf(text);
+ for(let i=0;i<w.length;i++){let acc='';for(let j=i;j<w.length;j++){acc+=w[j];if(acc===target)return true;if(acc.length>=target.length)break;}}
+ return false;
+}
 type Member = Player & {token:string;disconnectedAt:number;lastMessage:number};
 export class Room {
- code:string; hostId=''; members:Member[]=[]; settings:Settings; phase:Phase='lobby';
+ code:string; hostId=''; ownerId=''; members:Member[]=[]; settings:Settings; phase:Phase='lobby';
  round=0; order:string[]=[]; turnIndex=-1; turnId=''; drawerId=''; deadline=0;
  secret=''; choices:string[]=[]; hintPositions:number[]=[]; strokes:Stroke[]=[]; undone:Stroke[]=[]; revision=0;
  messages:Message[]=[]; updatedAt:number; used = new Set<string>();
@@ -14,16 +21,22 @@ export class Room {
  add(name:string,avatar:number,now:number):Session {
   if(!['lobby','finished'].includes(this.phase)&&!this.settings.allowLateJoin)throw new GameError('This room is locked until the game ends.');
   if(this.members.length>=this.settings.maxPlayers) throw new GameError('This room is full.');
+  const taken=(n:string)=>this.members.some(p=>p.name.toLowerCase()===n.toLowerCase());
+  if(taken(name)){const base=name.slice(0,17);for(let i=2;i<100;i++){const n=`${base} ${i}`;if(!taken(n)){name=n;break;}}}
   const m:Member={id:randomHex(this.random),token:randomHex(this.random,32),name,avatar,score:0,connected:true,ready:false,guessed:false,spectator:!['lobby','finished'].includes(this.phase),disconnectedAt:0,lastMessage:-Infinity};
-  this.members.push(m); if(!this.hostId)this.hostId=m.id;
+  this.members.push(m); if(!this.hostId)this.hostId=m.id; if(!this.ownerId)this.ownerId=m.id;
   this.system(`${name} joined the room.`,now);this.updatedAt=now;
   return {code:this.code,token:m.token,playerId:m.id};
  }
  member(id:string){const m=this.members.find(m=>m.id===id);if(!m)throw new GameError('You are no longer in this room.');return m;}
- resume(token:string,now:number){const m=this.members.find(m=>m.token===token);if(!m)throw new GameError('Your seat expired. Please join again.');m.connected=true;m.disconnectedAt=0;this.updatedAt=now;return m.id;}
- disconnect(id:string,now:number){const m=this.member(id);m.connected=false;m.disconnectedAt=now;this.transferHost();}
- transferHost(){if(!this.members.find(m=>m.id===this.hostId)?.connected)this.hostId=this.members.find(m=>m.connected)?.id??this.members[0]?.id??'';}
- remove(id:string,now:number){const m=this.member(id);this.members=this.members.filter(p=>p.id!==id);this.transferHost();this.system(`${m.name} left the room.`,now);if(id===this.drawerId&&['drawing','choosing','paused'].includes(this.phase))this.reveal(now);}
+ resume(token:string,now:number){const m=this.members.find(m=>m.token===token);if(!m)throw new GameError('Your seat expired. Please join again.');m.connected=true;m.disconnectedAt=0;this.updatedAt=now;this.transferHost();return m.id;}
+ disconnect(id:string,now:number){const m=this.member(id);m.connected=false;m.disconnectedAt=now;this.transferHost();this.checkAllGuessed(now);}
+ /** The room creator gets the host role back whenever they are connected. */
+ transferHost(){const owner=this.members.find(m=>m.id===this.ownerId);if(owner?.connected){this.hostId=owner.id;return;}
+  if(!this.members.find(m=>m.id===this.hostId)?.connected)this.hostId=this.members.find(m=>m.connected)?.id??this.members.find(m=>m.id===this.hostId)?.id??this.members[0]?.id??'';}
+ /** Ends the turn as soon as every remaining eligible guesser has guessed (also after someone leaves). */
+ checkAllGuessed(now:number){if(this.phase!=='drawing')return;const guessers=this.connected().filter(p=>p.id!==this.drawerId);if(guessers.length&&guessers.every(p=>p.guessed))this.reveal(now);}
+ remove(id:string,now:number){const m=this.member(id);this.members=this.members.filter(p=>p.id!==id);if(this.ownerId===id)this.ownerId='';this.transferHost();if(!this.ownerId)this.ownerId=this.hostId;this.system(`${m.name} left the room.`,now);if(id===this.drawerId&&['drawing','choosing','paused'].includes(this.phase))this.reveal(now);else this.checkAllGuessed(now);}
  system(text:string,now:number){this.pushMessage({id:randomHex(this.random),name:'Scribbles',text,kind:'system',at:now});}
  pushMessage(m:Message){this.messages.push(m);if(this.messages.length>100)this.messages.shift();}
  connected(){return this.members.filter(m=>m.connected&&!m.spectator);}
@@ -75,20 +88,32 @@ export class Room {
     const points=100+Math.round(400*Math.max(0,this.deadline-now)/(this.settings.seconds*1000));
     m.guessed=true;m.score+=points;const drawer=this.members.find(p=>p.id===this.drawerId);if(drawer)drawer.score+=50;
     this.pushMessage({id:randomHex(this.random),playerId:id,name:m.name,avatar:m.avatar,text:`guessed it! +${points}`,kind:'correct',at:now});
-    if(this.connected().filter(p=>p.id!==this.drawerId).every(p=>p.guessed))this.reveal(now);return;
+    this.checkAllGuessed(now);return;
    }
+   if(containsAnswer(text,this.secret))throw new GameError('Send just your guess on its own.');
   }
-  if(live&&answer&&normalized.includes(answer))throw new GameError('Keep the answer secret until the turn ends.');
+  if(live&&containsAnswer(text,this.secret))throw new GameError('Keep the answer secret until the turn ends.');
+  // The drawer and players who already guessed chat among themselves until the turn ends.
+  if(mode==='chat'&&live&&(id===this.drawerId||m.guessed)){this.pushMessage({id:randomHex(this.random),playerId:id,name:m.name,avatar:m.avatar,text,kind:'chat',at:now,secretTurn:this.turnId});return;}
   this.pushMessage({id:randomHex(this.random),playerId:id,name:m.name,avatar:m.avatar,text,kind:mode,at:now});
  }
- stroke(id:string,stroke:Stroke,turnId:string){
+ /** Without `from` the stroke replaces the whole line. With `from`, stroke.points are only the new points, appended at that index. */
+ stroke(id:string,stroke:Stroke,turnId:string,from?:number){
   this.requireTurn(id,turnId);
   const existing=this.strokes.findIndex(s=>s.id===stroke.id);
+  let points=stroke.points;
+  if(from!==undefined){
+   const prev=existing>=0?this.strokes[existing].points:[];
+   if(from>prev.length)throw new GameError('Drawing is out of sync. Refreshing the canvas.');
+   points=prev.slice(0,from).concat(stroke.points);
+   if(points.length>1500)throw new GameError('That line is too long. Lift your finger and keep drawing.');
+  }
   if(existing<0&&this.strokes.length>=500)throw new GameError('Canvas limit reached. Undo or clear to keep drawing.');
-  const count=this.strokes.reduce((n,s)=>n+s.points.length,0)-(existing>=0?this.strokes[existing].points.length:0)+stroke.points.length;
+  const count=this.strokes.reduce((n,s)=>n+s.points.length,0)-(existing>=0?this.strokes[existing].points.length:0)+points.length;
   if(count>20000)throw new GameError('Canvas limit reached. Undo or clear to keep drawing.');
-  if(existing>=0){const prev=this.strokes[existing];if(stroke.points.length<prev.points.length)return;this.strokes[existing]=stroke;}
-  else {this.strokes.push(stroke);this.undone=[];}
+  const next={...stroke,points};
+  if(existing>=0){const prev=this.strokes[existing];if(from===undefined&&points.length<prev.points.length)return;this.strokes[existing]=next;}
+  else {this.strokes.push(next);this.undone=[];}
   this.revision++;
  }
  canvas(id:string,action:'undo'|'redo'|'clear',turnId:string){
@@ -101,12 +126,15 @@ export class Room {
  act(id:string,c:Command,now:number){
   this.member(id);this.updatedAt=now;
   switch(c.type){
-   case 'settings':this.requireHost(id);if(this.phase!=='lobby')throw new GameError('Settings are locked during a game.');if(c.settings.maxPlayers<this.members.length)throw new GameError('Player limit is below current room size.');this.settings=c.settings;for(const m of this.members)m.ready=false;break;
+   case 'settings':this.requireHost(id);if(!['lobby','finished'].includes(this.phase))throw new GameError('Settings are locked during a game.');if(c.settings.maxPlayers<this.members.length)throw new GameError('Player limit is below current room size.');this.settings=c.settings;for(const m of this.members)m.ready=false;
+    // Changing settings after a match returns everyone to the lobby to ready up again.
+    if(this.phase==='finished'){this.phase='lobby';this.deadline=0;for(const m of this.members){m.spectator=false;m.guessed=false;}this.system('The host changed the settings. Ready up for the next game!',now);}
+    break;
    case 'ready':if(this.phase!=='lobby')throw new GameError('The game has started.');this.member(id).ready=c.ready;break;
    case 'start':this.start(id,now);break;
    case 'choose':this.choose(id,c.index,c.turnId,now);break;
    case 'message':this.message(id,c.text,c.mode,c.turnId,now);break;
-   case 'stroke':this.stroke(id,c.stroke,c.turnId);break;
+   case 'stroke':this.stroke(id,c.stroke,c.turnId,c.from);break;
    case 'canvas':this.canvas(id,c.action,c.turnId);break;
    default:throw new GameError('Unsupported room action.');
   }
@@ -118,6 +146,8 @@ export class Room {
   }
   const drawer=this.members.find(m=>m.id===this.drawerId);
   if(!drawer||(!drawer.connected&&now-drawer.disconnectedAt>=20000)){this.reveal(now);return;}
+  // A connected late joiner can keep the game alive: let them play this round instead of pausing.
+  if(this.connected().length<2)for(const m of this.members)if(m.connected&&m.spectator){m.spectator=false;if(!this.order.includes(m.id))this.order.push(m.id);}
   if(this.phase!=='paused'&&this.connected().length<2){this.pausedPhase=this.phase;this.remaining=Math.max(0,this.deadline-now);this.phase='paused';this.deadline=now+60000;}
   if(this.phase==='paused'){
    if(this.connected().length>=2&&drawer.connected){this.phase=this.pausedPhase;this.deadline=now+this.remaining;}
@@ -134,10 +164,13 @@ export class Room {
   const reveal=new Set(this.hintPositions.slice(0,count));
   return Array.from(this.secret).map((c,i)=>/[a-z]/i.test(c)&&!reveal.has(i)?'_':c).join('');
  }
- snapshot(id:string,now:number):Snapshot{
-  this.member(id);
+ /** Secret chat (drawer + players who guessed) stays private until the turn ends. */
+ canSeeSecret(id:string){return !['choosing','drawing','paused'].includes(this.phase)||id===this.drawerId||!!this.members.find(m=>m.id===id)?.guessed;}
+ /** withCanvas=false omits strokes: clients keep their canvas and apply stroke events instead. */
+ snapshot(id:string,now:number,withCanvas=true):Snapshot{
+  this.member(id);const secret=this.canSeeSecret(id);
   const showWord=(id===this.drawerId&&['drawing','paused'].includes(this.phase))||['reveal','finished'].includes(this.phase);
-  return {code:this.code,me:id,hostId:this.hostId,settings:{...this.settings,customWords:id===this.hostId?this.settings.customWords:[]},players:this.members.map(({token,disconnectedAt,lastMessage,...p})=>({...p})),phase:this.phase,round:Math.min(this.round,this.settings.rounds),turn:this.turnIndex+1,turnCount:this.order.length,turnId:this.turnId,drawerId:this.drawerId,deadline:this.deadline,serverNow:now,...(showWord&&this.secret?{word:this.secret}:{}),...(id===this.drawerId&&this.phase==='choosing'?{choices:[...this.choices]}:{}),...(this.secret?{hint:this.hint(now)}:{}),strokes:this.strokes.map(s=>({...s,points:s.points.map(p=>({...p}))})),canvasRevision:this.revision,messages:this.messages.map(m=>({...m}))};
+  return {code:this.code,me:id,hostId:this.hostId,settings:{...this.settings,customWords:id===this.hostId?this.settings.customWords:[]},players:this.members.map(({token,disconnectedAt,lastMessage,...p})=>({...p})),phase:this.phase,round:Math.min(this.round,this.settings.rounds),turn:this.turnIndex+1,turnCount:this.order.length,turnId:this.turnId,drawerId:this.drawerId,deadline:this.deadline,serverNow:now,...(showWord&&this.secret?{word:this.secret}:{}),...(id===this.drawerId&&this.phase==='choosing'?{choices:[...this.choices]}:{}),...(this.secret?{hint:this.hint(now)}:{}),strokes:withCanvas?this.strokes.map(s=>({...s,points:s.points.map(p=>({...p}))})):[],...(withCanvas?{}:{canvasOmitted:true as const}),canvasRevision:this.revision,messages:this.messages.filter(m=>secret||!m.secretTurn||m.secretTurn!==this.turnId).map(m=>({...m}))};
  }
 }
 export class GameStore {

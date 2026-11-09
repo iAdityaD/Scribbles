@@ -14,7 +14,8 @@ export class HostRuntime {
  constructor(private options:{random?:RandomSource;owner?:string;maxPlayers?:number}={}){this.store=new GameStore(options.random??webRandom);}
  connect(id:string,emit:Peer['emit']){this.disconnect(id);this.peers.set(id,{emit,cache:new Map(),window:0,count:0});}
  sync(id:string,now=Date.now()){const s=this.peers.get(id)?.session;try{return s?this.store.get(s.code).snapshot(s.playerId,now):null;}catch{return null;}}
- private publish(room:Room,now:number){for(const p of this.peers.values())if(p.session?.code===room.code&&room.members.some(m=>m.id===p.session!.playerId))p.emit({type:'state',state:room.snapshot(p.session.playerId,now)});}
+ /** Canvas strokes are only included when the canvas itself was rebuilt (join, undo/redo/clear); live lines travel as stroke events. */
+ private publish(room:Room,now:number,withCanvas=false){for(const p of this.peers.values())if(p.session?.code===room.code&&room.members.some(m=>m.id===p.session!.playerId))p.emit({type:'state',state:room.snapshot(p.session.playerId,now,withCanvas)});}
  private unseat(p:Peer,reason:string){p.session=undefined;p.emit({type:'removed',reason});}
  request(id:string,raw:unknown,now=Date.now()):Ack {
   const peer=this.peers.get(id);if(!peer)return {ok:false,error:'Connection is closed.'};
@@ -35,7 +36,7 @@ export class HostRuntime {
      const created=this.store.create(c.settings,c.name,c.avatar,now);room=created.room;session=created.session;
     }else if(c.type==='join'){room=this.store.get(c.code);session=room.add(c.name,c.avatar,now);}
     else {room=this.store.get(c.code);const playerId=room.resume(c.token,now);session={code:c.code,token:c.token,playerId};for(const [otherId,other]of this.peers)if(otherId!==id&&other.session?.playerId===playerId)this.unseat(other,'This seat was opened on another device.');}
-    peer.session=session;room.tick(now);result={ok:true,session};this.publish(room,now);
+    peer.session=session;room.tick(now);result={ok:true,session};this.publish(room,now,true);
    }else{
     if(!session)throw new GameError('Join a room first.');room=this.store.get(session.code);room.tick(now);
     if(c.type==='leave'){room.remove(session.playerId,now);peer.session=undefined;}
@@ -47,8 +48,8 @@ export class HostRuntime {
      room.act(session.playerId,c,now);
     }
     result={ok:true};
-    if(c.type==='stroke'){for(const p of this.peers.values())if(p.session?.code===room.code)p.emit({type:'stroke',event:{turnId:room.turnId,revision:room.revision,stroke:c.stroke}});}
-    else this.publish(room,now);
+    if(c.type==='stroke'){for(const p of this.peers.values())if(p.session?.code===room.code)p.emit({type:'stroke',event:{turnId:room.turnId,revision:room.revision,stroke:c.stroke,...(c.from!==undefined?{from:c.from}:{})}});}
+    else this.publish(room,now,c.type==='canvas');
    }
   }catch(e){result={ok:false,error:e instanceof GameError?e.message:'Unable to process that action.'};}
   peer.cache.set(requestId,result);if(peer.cache.size>256)peer.cache.delete(peer.cache.keys().next().value!);return result;

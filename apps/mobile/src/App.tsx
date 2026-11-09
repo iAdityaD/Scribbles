@@ -5,7 +5,7 @@ import * as Clipboard from 'expo-clipboard';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Circle, Rect, G } from 'react-native-svg';
-import { avatars, defaults, palette, type Settings, type Snapshot, type Command, type WordSet } from '../../../packages/protocol/index';
+import { avatars, defaults, palette, type Settings, type Snapshot, type Command, type WordSet, type Stroke } from '../../../packages/protocol/index';
 import { useGame } from './useGame';
 import { onlineInviteLink, parseOnlineInvite } from '../../../packages/network/onlineAddress';
 import { DrawingCanvas } from './Canvas';
@@ -65,6 +65,14 @@ function AppContent(){
   }catch(e){setPairNote(e instanceof Error?e.message:String(e));}finally{setPairBusy(false);}
  };
  const [confirm,setConfirm]=useState<{title:string;body:string;action:()=>void}|null>(null);
+ // Send only the points the host hasn't seen yet. A failed send forgets the line, so the next update resends it whole.
+ const sentPoints=useRef(new Map<string,number>());
+ useEffect(()=>{sentPoints.current.clear();},[state?.turnId]);
+ const sendStroke=(stroke:Stroke)=>{
+  if(!state)return;const from=sentPoints.current.get(stroke.id)??0;if(from>=stroke.points.length)return;
+  sentPoints.current.set(stroke.id,stroke.points.length);
+  void send({type:'stroke',stroke:{...stroke,points:stroke.points.slice(from)},turnId:state.turnId,from},true).then(ok=>{if(!ok)sentPoints.current.delete(stroke.id);});
+ };
  const [now,setNow]=useState(Date.now()),[keyboard,setKeyboard]=useState(false);
  useEffect(()=>{const t=setInterval(()=>setNow(Date.now()),250);return()=>clearInterval(t);},[]);
  useEffect(()=>{setUrl(game.endpoint);},[game.endpoint]);
@@ -102,7 +110,7 @@ function AppContent(){
   <View style={S.header}><View style={S.row}>{page!=='home'&&<IconButton name="arrow-back" label="Back" onPress={()=>{game.cancelPending();setPage('home');}}/>}<Text style={S.eyebrow}>{page==='home'?'A LITTLE CREATIVE CHAOS':page==='create'?'YOUR ROOM, YOUR RULES':'THE GANG’S ALL HERE'}</Text></View><IconButton name="help-circle-outline" label="How to play" onPress={()=>setHelpOpen(true)}/></View>
   {page==='home'?<ScrollView key="home" contentContainerStyle={S.homeScroll}>
    <View style={S.hero}><View style={S.crown}><Icon name="sparkles" color={C.yellow} size={34}/></View><Text style={S.logo}>Scribbles<Text style={{color:C.yellow}}>.</Text></Text><Text style={S.tagline}>Draw • Guess • Laugh</Text><HeroArt/></View>
-   <View style={S.row}>{([{key:'nearby',label:'Nearby · Offline',icon:'bluetooth'},{key:Platform.OS==='android'?'mesh':'socket',label:'Online',icon:'globe-outline'}] as const).map(item=><Pressable key={item.key} accessibilityRole="button" accessibilityLabel={item.label} accessibilityState={{selected:game.mode===item.key}} style={[S.modeCard,game.mode===item.key&&{borderColor:C.yellow}]} onPress={()=>{setSettings(prev=>({...prev,maxPlayers:item.key!=='socket'?Math.min(6,prev.maxPlayers):prev.maxPlayers}));void game.saveMode(item.key).catch(()=>game.setError('Could not save connection preference.'));}}><Icon name={item.icon} color={game.mode===item.key?C.yellow:C.text}/><Text style={S.h3}>{item.label}</Text></Pressable>)}</View>
+   <View style={S.row}>{([{key:'nearby',label:'Nearby · Offline',icon:'bluetooth'},{key:Platform.OS==='android'?'mesh':'socket',label:'Online',icon:'globe-outline'}] as const).filter(item=>item.key!=='nearby'||Platform.OS==='android').map(item=><Pressable key={item.key} accessibilityRole="button" accessibilityLabel={item.label} accessibilityState={{selected:game.mode===item.key}} style={[S.modeCard,game.mode===item.key&&{borderColor:C.yellow}]} onPress={()=>{setSettings(prev=>({...prev,maxPlayers:item.key!=='socket'?Math.min(6,prev.maxPlayers):prev.maxPlayers}));void game.saveMode(item.key).catch(()=>game.setError('Could not save connection preference.'));}}><Icon name={item.icon} color={game.mode===item.key?C.yellow:C.text}/><Text style={S.h3}>{item.label}</Text></Pressable>)}</View>
    <View style={S.homeCard}><Text style={S.homeTitle}>Good friends. Bad drawings.</Text><Text style={S.homeSubtitle}>Your next favourite game night.</Text><Button title="Create a room" icon="add-circle-outline" onPress={()=>setPage('create')}/><Pressable accessibilityRole="button" accessibilityLabel="Join with a code" style={S.creamButton} onPress={()=>setPage('join')}><Icon name="key-outline" color={C.bg}/><Text style={S.buttonText}>Join with a code</Text></Pressable><View style={[S.row,{justifyContent:'center',marginTop:5}]}><View style={[S.dot,{backgroundColor:connected? '#32975A':'#AB7137'}]}/><Text style={S.homeSubtitle}>{game.connectionMessage}</Text></View></View>
    <View style={S.homeFooter}><Pressable accessibilityRole="button" accessibilityLabel="Edit profile" onPress={()=>setProfileOpen(true)} style={S.footerItem}><Text style={{fontSize:28}}>{avatars[profile.avatar]}</Text><Text style={S.caption}>{profile.name||'Your profile'}</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Word sets" onPress={()=>openWordSets()} style={S.footerItem}><Icon name="albums-outline"/><Text style={S.caption}>Word sets</Text></Pressable><Pressable accessibilityRole="button" onPress={()=>setServerOpen(true)} style={S.footerItem}><Icon name="settings-outline"/><Text style={S.caption}>Settings</Text></Pressable></View>
   </ScrollView>:<ScrollView key={page} keyboardShouldPersistTaps="handled" contentContainerStyle={{gap:22,paddingVertical:26}}>
@@ -129,11 +137,11 @@ function AppContent(){
  </>:state.phase==='finished'?<>
   <View style={S.header}><IconButton name="close" label="Leave room" onPress={leave}/><Text style={S.eyebrow}>THAT’S A WRAP</Text><IconButton name="chatbubbles-outline" label="Players" onPress={()=>setPlayersOpen(true)}/></View>
   <ScrollView key={`results-${state.code}`} contentContainerStyle={{gap:24,paddingVertical:20}}><View style={{alignItems:'center',gap:12}}><Icon name="trophy" color={C.yellow} size={72}/><Text style={S.title}>Masterpieces made.</Text><Text style={S.caption}>Same friends. One more game?</Text></View><View style={{gap:12}}>{[...state.players].sort((a,b)=>b.score-a.score).map((p,i)=><View key={p.id} style={[S.scoreRow,i===0&&{borderColor:C.yellow,borderWidth:1}]}><Text style={[S.rank,{color:i===0?C.yellow:C.muted}]}>{i+1}</Text><Text style={{fontSize:30}}>{avatars[p.avatar]}</Text><Text style={[S.h3,{flex:1}]}>{p.name}</Text><Text style={[S.h3,{color:C.yellow}]}>{p.score}<Text style={S.caption}> pts</Text></Text></View>)}</View><Chat typing={game.mode==='mesh'&&game.typing} onTyping={game.mode==='mesh'?()=>game.mesh.publishTyping():undefined} state={state} send={send} muted={muted} compact/></ScrollView>
-  <Button title={isHost?'Play again':'Waiting for host…'} icon="refresh" disabled={!isHost||!connected||busy} onPress={()=>void send({type:'start'})}/><Button title="Back to home" secondary icon="home-outline" onPress={leave}/>
+  <Button title={isHost?'Play again':'Waiting for host…'} icon="refresh" disabled={!isHost||!connected||busy} onPress={()=>void send({type:'start'})}/>{isHost&&<Button title="Change settings" secondary icon="options-outline" disabled={!connected||busy} onPress={openSettings}/>}<Button title="Back to home" secondary icon="home-outline" onPress={leave}/>
  </>:<>
   <View style={S.header}><IconButton name="arrow-back" label="Leave game" onPress={leave}/><View style={{alignItems:'center'}}><Text style={S.h3}>Round {state.round}/{state.settings.rounds}</Text><Text style={S.caption}>Turn {state.turn}/{state.turnCount} · {drawer?.name??'Next player'}</Text></View><View style={S.timer}><Icon name="timer-outline" color={C.bg} size={18}/><Text style={S.timerText}>{time}s</Text></View></View>
   <View style={S.wordBar}><Icon name={drawing?'pencil':'eye-outline'} color={C.yellow} size={18}/><Text style={S.wordText}>{state.phase==='paused'?'Waiting for players…':state.phase==='choosing'?(state.me===state.drawerId?'Your turn to choose!':`${drawer?.name} is choosing…`):state.phase==='reveal'?`The word was ${state.word||'not chosen'}`:drawing?`Draw: ${state.word}`:me?.guessed?'You guessed it!':state.hint?.split('').join(' ')}</Text></View>
-  <View style={[{width:'100%',alignSelf:'center'},keyboard&&{maxWidth:230}]}><DrawingCanvas strokes={state.strokes} enabled={!!drawing&&connected} color={eraser?'#FFFFFF':color} width={eraser?26:brush} turnId={state.turnId} onStroke={stroke=>{void send({type:'stroke',stroke,turnId:state.turnId},true);}}/>
+  <View style={[{width:'100%',alignSelf:'center'},keyboard&&{maxWidth:230}]}><DrawingCanvas strokes={state.strokes} enabled={!!drawing&&connected} color={eraser?'#FFFFFF':color} width={eraser?26:brush} turnId={state.turnId} onStroke={sendStroke}/>
    {game.mode==='mesh'&&game.cursor&&<View pointerEvents="none" style={{position:'absolute',left:`${game.cursor.x*100}%`,top:`${game.cursor.y*100}%`,width:8,height:8,marginLeft:-4,marginTop:-4,borderRadius:4,backgroundColor:C.yellow}}/>}
    {state.phase==='choosing'&&<View style={S.canvasOverlay}><Icon name="sparkles" color={C.yellow} size={34}/><Text style={[S.h2,{color:C.bg,textAlign:'center'}]}>{state.me===state.drawerId?'Pick your masterpiece':'A masterpiece is coming…'}</Text>{state.choices?.map((word,index)=><Pressable key={word} style={S.wordChoice} onPress={()=>void send({type:'choose',index,turnId:state.turnId})}><Text style={S.buttonText}>{word}</Text><Icon name="arrow-forward" color={C.bg}/></Pressable>)}</View>}
    {state.phase==='paused'&&<View style={S.canvasOverlay}><ActivityIndicator color={C.bg}/><Text style={[S.h3,{color:C.bg}]}>Holding your place</Text><Text style={{textAlign:'center',color:'#555'}}>The game resumes when players reconnect.</Text></View>}
@@ -169,7 +177,7 @@ function Chat({state,send,muted,typing,onTyping,compact=false}:{typing?:boolean;
  const [text,setText]=useState(''),[mode,setMode]=useState<'guess'|'chat'>('guess'),[sending,setSending]=useState(false);const list=useRef<ScrollView>(null);
  const me=state.players.find(p=>p.id===state.me);const canGuess=state.phase==='drawing'&&state.me!==state.drawerId&&!me?.guessed&&!me?.spectator;
  const activeMode=canGuess?mode:'chat';
- useEffect(()=>{setMode('guess');setText('');},[state.turnId]);
+ useEffect(()=>{setMode('guess');},[state.turnId]); // keep any half-typed text
  const submit=async()=>{if(!text.trim()||sending)return;setSending(true);const ok=await send({type:'message',text,mode:activeMode,turnId:state.turnId});if(ok)setText('');setSending(false);};
  const messages=state.messages.filter(m=>!m.playerId||!muted.includes(m.playerId)||m.kind==='correct');
  return <View style={[S.chat,compact?{height:215}:{flex:1,minHeight:115}]}><ScrollView ref={list} nestedScrollEnabled keyboardShouldPersistTaps="handled" onContentSizeChange={()=>list.current?.scrollToEnd({animated:true})} contentContainerStyle={{padding:12,gap:9,flexGrow:1}}>
