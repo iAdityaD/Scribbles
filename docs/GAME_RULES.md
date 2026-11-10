@@ -1,18 +1,20 @@
 # Game rules and recovery
 
 - Default room: 8 seats, 3 rounds, 80 seconds per drawing turn, Random mode with Classic words. Hosts can choose 2–12 seats and 1–10 rounds.
-- Start requires at least 2 connected players; non-host players must mark ready. Changing room settings clears ready states. Rematch requires 2 connected players and resets scores.
-- Each round gives each participating player a turn. A disconnected player is skipped when their turn begins. Late joins spectate until the next round.
+- Start requires at least 2 connected players; non-host players must mark ready. Changing room settings clears ready states. Rematch requires 2 connected players and resets scores. After a match the host can also change settings, which returns everyone to the lobby.
+- Each round gives each participating player a turn. A disconnected player is skipped when their turn begins. Late joins spectate until the next round, unless fewer than 2 active players remain: then a connected spectator joins the current round so the game keeps going.
 - Drawer defaults to 15 seconds to choose one of 3 words; hosts can configure 10–30 selection seconds and 1–3 choices. Timeout chooses the first. All active, unguessed non-drawers may guess.
-- Exact guesses normalize case, whitespace and punctuation. No fuzzy matching: an incorrect guess remains in the feed.
-- Correct guess earns `100 + round(400 * remainingTime / turnDuration)`. Drawer gains 50 per correct player. Each player scores once per turn. All eligible connected players guessing correctly ends the turn early.
+- Exact guesses normalize case, whitespace and punctuation. No fuzzy matching: an incorrect guess ("cats" for "cat") remains in the feed. A guess that contains the answer plus other words ("is it a cat") is rejected with a prompt to send the word on its own.
+- Correct guess earns `100 + round(400 * remainingTime / turnDuration)`. Drawer gains 50 per correct player. Each player scores once per turn. All eligible connected players guessing correctly ends the turn early, including when the last player who hadn't guessed leaves or disconnects.
 - Reveal lasts 5 seconds. An individual correct guess does not prematurely reveal the word to the rest of the room.
-- Host departure transfers control to the first connected member. Room ownership is a UI privilege; the backend still controls all gameplay.
+- Host departure transfers control to the first connected member. The room creator gets the host role back when they reconnect; if the creator leaves the room, the new host keeps it. Room ownership is a UI privilege; the backend still controls all gameplay.
 - Disconnected seats remain for 60 seconds. An absent drawer gets up to 20 seconds before the turn is revealed/skipped. If fewer than 2 active players remain, the game pauses, preserving time, for up to 60 seconds. A drawer timeout can end that pause earlier.
 - Reconnecting restores the same ID, score, canvas and last 100 messages. Opening the same seat on another device removes the old socket's seat access.
 - Leaving or being removed explicitly deletes the seat and score. The former token cannot restore it; the player may join again as a new seat. Empty rooms expire. A server restart discards all rooms.
-- Guess input is separate from Chat mode. The drawer and successful guessers can chat. Messages containing the normalized answer are blocked during drawing/paused phases. Successful guesses appear only as a success event.
-- 200 characters/message, 600ms between accepted message attempts; up to 60 commands/socket/second, 500 strokes and 20,000 canvas points. Input sizes are validated before entering game logic.
+- Guess input is separate from Chat mode. During a turn, chat from the drawer and from players who already guessed is shown only to the drawer and other successful guessers; everyone sees it once the turn ends. Messages containing the answer as a whole word (also spaced out, e.g. "c a t") are blocked during drawing/paused phases; words that merely contain it ("category") are allowed. Successful guesses appear only as a success event.
+- Two players in a room never share a name: a duplicate gets a number ("Sam 2").
+- 200 characters/message, 600ms between accepted message attempts; up to 60 commands/socket/second, 500 strokes and 20,000 canvas points (1,500 per line). The online server allows 6 new rooms per client address per 10 minutes (`ROOM_CREATE_LIMIT`).
+- Bandwidth: while drawing, the app sends only the new points of a line, and state updates leave the canvas out unless it was rebuilt (join, reconnect, undo/redo/clear). Input sizes are validated before entering game logic.
 
 ## Word modes and additional options
 

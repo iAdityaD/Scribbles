@@ -32,7 +32,16 @@ export function useGame(){
   return()=>{off();clearTimeout(timer);};
  },[mesh]);
  const operation=useRef(0);
- const accept=(s:Snapshot)=>{clockOffset.current=s.serverNow-Date.now();setState(s);};
+ // Set inside state updaters when the local canvas is behind; the effect below re-syncs outside render.
+ const needSync=useRef(false),resync=useRef<()=>void>(()=>{});
+ const accept=(s:Snapshot)=>{clockOffset.current=s.serverNow-Date.now();setState(prev=>{
+  if(!s.canvasOmitted)return s;
+  // Lightweight update without strokes: keep the canvas we already have for this turn.
+  if(prev&&prev.turnId===s.turnId){if(s.canvasRevision>prev.canvasRevision)needSync.current=true;return {...s,canvasOmitted:undefined,strokes:prev.strokes,canvasRevision:prev.canvasRevision};}
+  if(s.canvasRevision>0)needSync.current=true;
+  return {...s,canvasOmitted:undefined,strokes:[],canvasRevision:0};
+ });};
+ useEffect(()=>{if(needSync.current){needSync.current=false;resync.current();}},[state]);
  useEffect(()=>{
   let alive=true;
   AsyncStorage.multiGet(['scribbles.profile','scribbles.session','scribbles.endpoint','scribbles.mode']).then(rows=>{
@@ -62,6 +71,7 @@ export function useGame(){
   transport.current=t;setConnected(false);setConnectionMessage(mode==='nearby'?'Nearby ready. No internet needed.':'Connecting to online server…');
   const clear=()=>{session.current=null;setState(null);if(mode==='socket')AsyncStorage.removeItem('scribbles.session').catch(()=>{});};
   const fresh=()=>{const op=operation.current;void t.sync().then(s=>{if(alive&&op===operation.current&&s)accept(s);}).catch(()=>{});};
+  resync.current=fresh;
   const off=t.subscribe(event=>{
    if(!alive)return;
    if(event.type==='connection'){
@@ -71,10 +81,14 @@ export function useGame(){
     }).catch(()=>{if(alive&&op===operation.current){setError('Reconnection timed out. Trying again…');t.disconnect();void t.connect();}});}else setConnected(event.connected);
    }else if(event.type==='state')accept(event.state);
    else if(event.type==='stroke')setState(prev=>{
-    if(!prev||prev.turnId!==event.event.turnId||event.event.revision<=prev.canvasRevision)return prev;
-    if(event.event.revision>prev.canvasRevision+1){fresh();return prev;}
-    const strokes=[...prev.strokes];const i=strokes.findIndex(x=>x.id===event.event.stroke.id);if(i<0)strokes.push(event.event.stroke);else strokes[i]=event.event.stroke;
-    return {...prev,strokes,canvasRevision:event.event.revision};
+    const e=event.event;
+    if(!prev||prev.turnId!==e.turnId||e.revision<=prev.canvasRevision)return prev;
+    if(e.revision>prev.canvasRevision+1){needSync.current=true;return prev;}
+    const strokes=[...prev.strokes];const i=strokes.findIndex(x=>x.id===e.stroke.id);let next=e.stroke;
+    // Delta events carry only the appended points.
+    if(e.from!==undefined){const old=i>=0?strokes[i].points:[];if(e.from>old.length){needSync.current=true;return prev;}next={...e.stroke,points:old.slice(0,e.from).concat(e.stroke.points)};}
+    if(i<0)strokes.push(next);else strokes[i]=next;
+    return {...prev,strokes,canvasRevision:e.revision};
    });
    else if(event.type==='removed'){clear();setError(event.reason);}
    else setError(event.message);
